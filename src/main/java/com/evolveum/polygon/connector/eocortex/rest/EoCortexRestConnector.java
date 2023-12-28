@@ -1,7 +1,7 @@
 
 // Simplified version of GitlabRestConnector.java
 
-package com.evolveum.polygon.connector.gitlab.rest;
+package com.evolveum.polygon.connector.eocortex.rest;
 
 
 import java.io.IOException;
@@ -37,12 +37,12 @@ import org.identityconnectors.framework.spi.operations.TestOp;
 import org.identityconnectors.framework.spi.operations.UpdateDeltaOp;
 import org.identityconnectors.framework.spi.operations.DeleteOp;
 
-@ConnectorClass(displayNameKey = "connector.gitlab.rest.display", configurationClass = GitlabRestConfiguration.class)
-public class GitlabRestConnector
+@ConnectorClass(displayNameKey = "connector.gitlab.rest.display", configurationClass = EoCortexRestConfiguration.class)
+public class EoCortexRestConnector
 		implements TestOp, SchemaOp, Connector, CreateOp, DeleteOp, UpdateDeltaOp, SearchOp<Filter>  {
 
-    private static final Log LOGGER = Log.getLog(GitlabRestConnector.class);
-    private GitlabRestConfiguration configuration;
+    private static final Log LOGGER = Log.getLog(EoCortexRestConnector.class);
+    private EoCortexRestConfiguration configuration;
     private CloseableHttpClient httpClient;
     
     @Override
@@ -53,7 +53,7 @@ public class GitlabRestConnector
     @Override
     public void init(Configuration cfg) {
         LOGGER.info("Initialize");
-        this.configuration = (GitlabRestConfiguration) cfg;
+        this.configuration = (EoCortexRestConfiguration) cfg;
         this.httpClient = HttpClientBuilder.create().build();
     }
 
@@ -72,7 +72,7 @@ public class GitlabRestConnector
     @Override
     public Schema schema() {
         LOGGER.info("Schema operation invoked");
-        SchemaBuilder builder = new SchemaBuilder(GitlabRestConnector.class);
+        SchemaBuilder builder = new SchemaBuilder(EoCortexRestConnector.class);
         // Define schema here
         return builder.build();
     }

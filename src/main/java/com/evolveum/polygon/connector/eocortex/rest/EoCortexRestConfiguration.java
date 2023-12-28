@@ -1,5 +1,5 @@
 
-package com.evolveum.polygon.connector.gitlab.rest;
+package com.evolveum.polygon.connector.eocortex.rest;
 
 
 import org.identityconnectors.common.StringUtil;
@@ -10,14 +10,15 @@ import org.identityconnectors.framework.spi.AbstractConfiguration;
 import org.identityconnectors.framework.spi.ConfigurationProperty;
 import org.identityconnectors.framework.spi.StatefulConfiguration;
 
-public class GitlabRestConfiguration extends AbstractConfiguration {
+public class EoCortexRestConfiguration extends AbstractConfiguration {
 
     private String connectionUrl;
     private String username;
     private String password;
-    private static final Log LOGGER = Log.getLog(GitlabRestConnector.class);
+    private static final Log LOGGER = Log.getLog(EoCortexRestConnector.class);
 
-    @ConfigurationProperty(displayMessageKey = "Connection URL", helpMessageKey = "URL for the GitLab instance.")
+    //TODO add a required to all of those
+    @ConfigurationProperty(displayMessageKey = "connectionUrl.display", helpMessageKey = "connectionUrl.help")
     public String getConnectionUrl() {
         return connectionUrl;
     }
@@ -26,7 +27,7 @@ public class GitlabRestConfiguration extends AbstractConfiguration {
         this.connectionUrl = connectionUrl;
     }
 
-    @ConfigurationProperty(displayMessageKey = "Username", helpMessageKey = "Username for authentication.")
+    @ConfigurationProperty(displayMessageKey = "username.display", helpMessageKey = "username.help")
     public String getUsername() {
         return username;
     }
@@ -35,7 +36,7 @@ public class GitlabRestConfiguration extends AbstractConfiguration {
         this.username = username;
     }
 
-    @ConfigurationProperty(displayMessageKey = "Password", helpMessageKey = "Password for authentication.", confidential = true)
+    @ConfigurationProperty(displayMessageKey = "password.display", helpMessageKey = "password.help", confidential = true)
     public String getPassword() {
         return password;
     }
