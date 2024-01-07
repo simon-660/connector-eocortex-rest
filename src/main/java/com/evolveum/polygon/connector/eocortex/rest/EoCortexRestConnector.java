@@ -168,6 +168,7 @@ public class EoCortexRestConnector
     public void executeQuery(ObjectClass objClass, Filter query, ResultsHandler handler, OperationOptions options) {
         LOGGER.info("Execute query operation invoked");
 
+        //TODO learn how to filters work
         if (!objClass.is(ObjectClass.ACCOUNT_NAME)) {
             throw new IllegalArgumentException("Unsupported object class: " + objClass);
         }
@@ -180,7 +181,13 @@ public class EoCortexRestConnector
             for (PlateQueryData plate : plates) {
                 ConnectorObjectBuilder cob = new ConnectorObjectBuilder();
                 cob.setObjectClass(ObjectClass.ACCOUNT);
-                cob.setName(plate.getExternal_owner_id());
+
+                //if name is empty the car may not be added by midpoint so for listing purposes return uid
+                if (plate.getExternal_owner_id().isEmpty()) {
+                    cob.setName(plate.getId());
+                } else {
+                    cob.setName(plate.getExternal_owner_id());
+                }
                 cob.setUid(plate.getId()); // 'id' should always be present for a UID
 
                 // Add attributes, checking for null values
