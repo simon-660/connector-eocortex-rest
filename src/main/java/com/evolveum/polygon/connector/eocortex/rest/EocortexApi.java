@@ -49,6 +49,15 @@ public class EocortexApi {
         }
     }
 
+    public String parseErrorMessage(String jsonError) {
+        try {
+            JSONObject jsonObj = new JSONObject(jsonError);
+            return jsonObj.optString("ErrorMessage", "Unknown error"); // Default message if key not found
+        } catch (JSONException e) {
+            return "Error parsing error message: " + e.getMessage(); // Return parsing error
+        }
+    }
+
     public String parseUidFromResponse(String jsonResponse) {
         try {
             JSONObject responseObj = new JSONObject(jsonResponse);
@@ -59,11 +68,12 @@ public class EocortexApi {
                 if (platesArray.length() > 0) {
                     JSONObject firstPlate = platesArray.getJSONObject(0);
                     return firstPlate.optString("id", "{\"ErrorMessage\": \"ID not found\"}");
-                } else {
-                    return "{\"ErrorMessage\": \"No plates data found\"}";
+                }
+                else{
+                    return "{\"ErrorMessage\": \"Plates array not found\"}";
                 }
             } else {
-                return "{\"ErrorMessage\": \"Plates array not found\"}";
+                return responseObj.optString("id", "{\"ErrorMessage\": \"ID not found\"}");
             }
         } catch (JSONException e) {
             String jsonCustomErrorString = "{\"ErrorMessage\": \"" + e.toString() + "\"}";
@@ -91,7 +101,7 @@ public class EocortexApi {
 
             if(hasError(EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8))) return false;
             return statusCode == HttpStatus.SC_OK; //return false if not 200
-        } catch (IOException e) {
+        } catch (Exception e) {
             //e.printStackTrace();
             return false;
         }
@@ -103,9 +113,9 @@ public class EocortexApi {
             String additionalInfo, String model, String color, List<String> groupIds) {
 
         JSONObject owner = new JSONObject();
-        if (firstName != null) owner.put("first_name", firstName);
-        if (secondName != null) owner.put("second_name", secondName);
-        if (thirdName != null) owner.put("third_name", thirdName);
+        if (firstName != null && !firstName.isEmpty()) owner.put("first_name", firstName);
+        if (secondName != null && !secondName.isEmpty()) owner.put("second_name", secondName);
+        if (thirdName != null && !thirdName.isEmpty()) owner.put("third_name", thirdName);
 
         JSONArray groups = new JSONArray();
         if (groupIds != null) {
@@ -117,7 +127,7 @@ public class EocortexApi {
         }
 
         JSONObject json = new JSONObject();
-        json.put("owner", owner);
+        if(!owner.isEmpty())json.put("owner", owner);
         //if (id != null) json.put("id", id);
         if (externalId != null) json.put("external_id", externalId);
         if (external_sys_id != null) json.put("external_sys_id", external_sys_id);
@@ -138,15 +148,22 @@ public class EocortexApi {
             String licensePlateNumber, String additionalInfo, String model,
             String color, List<String> groupIds) throws JSONException {
 
+        //TODO ošetriť vstup
         JSONObject json = new JSONObject(existingJsonString);
 
-        if (json.has("owner")) {
-            JSONObject owner = json.getJSONObject("owner");
+        // Update owner fields only if any owner detail is provided
+        if (firstName != null || secondName != null || thirdName != null) {
+            JSONObject owner = json.optJSONObject("owner");
+            if (owner == null) {
+                owner = new JSONObject();
+                json.put("owner", owner);
+            }
             if (firstName != null) owner.put("first_name", firstName);
             if (secondName != null) owner.put("second_name", secondName);
             if (thirdName != null) owner.put("third_name", thirdName);
         }
 
+        // Update or add other fields
         if (externalId != null) json.put("external_id", externalId);
         if (external_sys_id != null) json.put("external_sys_id", external_sys_id);
         if (external_owner_id != null) json.put("external_owner_id", external_owner_id);
@@ -155,6 +172,7 @@ public class EocortexApi {
         if (model != null) json.put("model", model);
         if (color != null) json.put("color", color);
 
+        // Update or add groups
         if (groupIds != null) {
             JSONArray groups = new JSONArray();
             for (String groupId : groupIds) {
@@ -183,7 +201,7 @@ public class EocortexApi {
 
             HttpResponse response = httpClient.execute(request);
             responseString = EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
-        } catch (IOException e) {
+        } catch (Exception e) {
             String jsonCustomErrorString = "{\"ErrorMessage\": \"" + e.toString() + "\"}";
             return jsonCustomErrorString;
         }
@@ -203,7 +221,7 @@ public class EocortexApi {
 
             HttpResponse response = httpClient.execute(request);
             responseString = EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
-        } catch (IOException e) {
+        } catch (Exception e) {
             String jsonCustomErrorString = "{\"ErrorMessage\": \"" + e.toString() + "\"}";
             return jsonCustomErrorString;
         }
@@ -260,6 +278,21 @@ public class EocortexApi {
         return responseString;
     }
 
+    public String getAllCars() {
+        String responseString = null;
+        try (CloseableHttpClient httpClient = HttpClientBuilder.create().build()) {
+            HttpGet request = new HttpGet(apiUrl + "/cars");
+            request.setHeader("Authorization", getEncodedAuthHeader());
+
+            HttpResponse response = httpClient.execute(request);
+            responseString = EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            e.printStackTrace();
+            responseString = "{\"ErrorMessage\": \"" + e.toString() + "\"}";
+        }
+        return responseString;
+    }
+
     public String deleteCar(String carId) {
         String responseString = null;
         try (CloseableHttpClient httpClient = HttpClientBuilder.create().build()) {
@@ -268,7 +301,7 @@ public class EocortexApi {
 
             HttpResponse response = httpClient.execute(request);
             responseString = EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
-        } catch (IOException e) {
+        } catch (Exception e) {
             String jsonCustomErrorString = "{\"ErrorMessage\": \"" + e.toString() + "\"}";
             return jsonCustomErrorString;
         }
@@ -285,7 +318,7 @@ public class EocortexApi {
             responseString = EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
 
             return findGroupByName(responseString, groupName);
-        } catch (IOException e) {
+        } catch (Exception e) {
             String jsonCustomErrorString = "{\"ErrorMessage\": \"" + e.toString() + "\"}";
             return jsonCustomErrorString;
         }

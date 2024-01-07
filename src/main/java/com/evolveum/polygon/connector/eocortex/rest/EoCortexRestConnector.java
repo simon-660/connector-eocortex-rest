@@ -5,9 +5,7 @@ package com.evolveum.polygon.connector.eocortex.rest;
 
 
 import java.io.IOException;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClientBuilder;
@@ -118,37 +116,58 @@ public class EoCortexRestConnector
         LOGGER.info("eocortex : Create operation invoked");
 
         // Extracting attributes
-        //String name = AttributeUtil.getStringValue(AttributeUtil.find(Name.NAME, attributes));
-        //String firstName = AttributeUtil.getStringValue(AttributeUtil.find("firstName", attributes));
-        //String secondName = AttributeUtil.getStringValue(AttributeUtil.find("secondName", attributes));
-        //String thirdName = AttributeUtil.getStringValue(AttributeUtil.find("thirdName", attributes));
-        //String externalId = AttributeUtil.getStringValue(AttributeUtil.find("externalId", attributes));
-        //String externalSysId = AttributeUtil.getStringValue(AttributeUtil.find("external_sys_id", attributes));
-        //String externalOwnerId = AttributeUtil.getStringValue(AttributeUtil.find("external_owner_id", attributes));
-        //String licensePlateNumber = AttributeUtil.getStringValue(AttributeUtil.find("licensePlateNumber", attributes));
-        //String additionalInfo = AttributeUtil.getStringValue(AttributeUtil.find("additionalInfo", attributes));
-        //String model = AttributeUtil.getStringValue(AttributeUtil.find("model", attributes));
-        //String color = AttributeUtil.getStringValue(AttributeUtil.find("color", attributes));
-        //String groupIds = AttributeUtil.getStringValue(AttributeUtil.find("groupIds", attributes));
+        String name = getAndValidateAttribute(attributes, Name.NAME);
+        String firstName = getAndValidateAttribute(attributes, "firstName");
+        String secondName = getAndValidateAttribute(attributes, "secondName");
+        String thirdName = getAndValidateAttribute(attributes, "thirdName");
+        String externalId = getAndValidateAttribute(attributes, "externalId");
+        String externalSysId = getAndValidateAttribute(attributes, "external_sys_id");
+        String externalOwnerId = getAndValidateAttribute(attributes, "external_owner_id");
+        String licensePlateNumber = getAndValidateAttribute(attributes, "licensePlateNumber");
+        String additionalInfo = getAndValidateAttribute(attributes, "additionalInfo");
+        String model = getAndValidateAttribute(attributes, "model");
+        String color = getAndValidateAttribute(attributes, "color");
+        String groupIds = getAndValidateAttribute(attributes, "groupIds");
 
-        LOGGER.info("eocortex : Create op info ->" + externalId + " " + licensePlateNumber);
+        //TODO debug this
+        //List<String> groupList = new ArrayList<>();
+        //groupList.add(groupIds);
 
-        return new Uid(externalId);
+        String addCarJson = api.createJsonString(firstName, secondName, thirdName, externalId, externalSysId, externalOwnerId, licensePlateNumber, additionalInfo, model, color, null);
+
+        //LOGGER.info("eocortex : Create op info ->"+ externalSysId + "," + name + " ");
+
+        //TODO nemôžem posielať json do logu lebo sa ho snaži spracovať !!
+        //LOGGER.info("eocortex : Create op info ->" + addCarJson);
+
+        String addCarResult = api.addCar(addCarJson);
+
+        String uidNewCar = null;
+        if(!api.hasError(addCarResult)) uidNewCar = api.parseUidFromResponse(addCarResult);
+
+        LOGGER.info("EoCortex : Create car id ->" + uidNewCar);
+
+        return new Uid(uidNewCar);
     }
 
     @Override
     public void delete(ObjectClass objClass, Uid uid, OperationOptions options) {
         LOGGER.info("eocortex : Delete operation invoked");
 
+        //String carFindUid = api.parseUidFromResponse(api.findCars(uid.getUidValue(),null));
+        String deleteResult = api.deleteCar(uid.getUidValue());
 
-
-        LOGGER.info("eocortex : delete ->"+ uid.toString());
-        // Delete operation logic
+        if(api.hasError(deleteResult)) {
+            LOGGER.error("EoCortex : delete error :"+ api.parseErrorMessage(deleteResult));
+        } else {
+            LOGGER.info("eocortex : delete ->"+ uid.getUidValue());
+        }
     }
 
     @Override
     public void executeQuery(ObjectClass objClass, Filter query, ResultsHandler handler, OperationOptions options) {
         LOGGER.info("Execute query operation invoked");
+
         // Query execution logic
     }
 
@@ -170,22 +189,20 @@ public class EoCortexRestConnector
 	}
 
     private String getAndValidateAttribute(Set<Attribute> attributes, String attributeName) {
-        Attribute attr = AttributeUtil.find(attributeName, attributes);
-        if (attr == null) {
-            LOGGER.error("Attribute '{0}' is not present.", attributeName);
-            return null;
-        }
+        if(attributes.isEmpty()) return null;
 
-        try {
-            String attrValue = AttributeUtil.getStringValue(attr);
-            if (attrValue == null || attrValue.trim().isEmpty()) {
-                LOGGER.error("Attribute '{0}' is present but has no value.", attributeName);
+        for (Attribute attr:attributes) {
+            String attrName = attr.getName();
+            String value = null;
+            //LOGGER.info("getAndValidateAttr : "+ attrName);
+            //LOGGER.info("--->"+attributeName+" ,"+attrName);
+            if(attrName.equals(attributeName)) {
+                value = AttributeUtil.getStringValue(AttributeUtil.find(attributeName, attributes));
+                LOGGER.info("getAndValidateAttr : value ->" + value);
+                if (!Objects.equals(value, "")) return value;
                 return null;
             }
-            return attrValue;
-        } catch (ConnectorException e) {
-            LOGGER.error("Error occurred while getting string value for attribute '{0}': {1}", attributeName, e.getMessage());
-            return null;
         }
+        return null;
     }
 }
