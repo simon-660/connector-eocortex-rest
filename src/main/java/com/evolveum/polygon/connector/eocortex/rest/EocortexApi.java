@@ -1,5 +1,7 @@
 package com.evolveum.polygon.connector.eocortex.rest;
 
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.http.HttpResponse;
 import org.apache.http.HttpStatus;
@@ -19,6 +21,7 @@ import org.json.JSONObject;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.List;
 
 public class EocortexApi {
@@ -261,6 +264,28 @@ public class EocortexApi {
         return responseString;
     }
 
+    public List<PlateQueryData> getAllCars() {
+        try (CloseableHttpClient httpClient = HttpClientBuilder.create().build()) {
+            HttpGet request = new HttpGet(apiUrl + "/cars");
+            request.setHeader("Authorization", getEncodedAuthHeader());
+
+            HttpResponse response = httpClient.execute(request);
+            String responseString = EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
+
+            JSONObject responseObject = new JSONObject(responseString);
+            if (responseObject.getInt("total_count") == 0) {
+                return Collections.emptyList(); // Return an empty list if no cars are found
+            }
+            JSONArray platesArray = responseObject.getJSONArray("plates");
+
+            // Deserialize JSON directly to List<Plate>
+            return new Gson().fromJson(platesArray.toString(), new TypeToken<List<PlateQueryData>>(){}.getType());
+        } catch (IOException | JSONException e) {
+            e.printStackTrace();
+            return Collections.emptyList(); // Return an empty list in case of error
+        }
+    }
+
     public String getCarDetails(String carId) {
         String responseString = null;
         try (CloseableHttpClient httpClient = HttpClientBuilder.create().build()) {
@@ -274,21 +299,6 @@ public class EocortexApi {
         } catch (Exception e) {
             String jsonCustomErrorString = "{\"ErrorMessage\": \"" + e.toString() + "\"}";
             return jsonCustomErrorString;
-        }
-        return responseString;
-    }
-
-    public String getAllCars() {
-        String responseString = null;
-        try (CloseableHttpClient httpClient = HttpClientBuilder.create().build()) {
-            HttpGet request = new HttpGet(apiUrl + "/cars");
-            request.setHeader("Authorization", getEncodedAuthHeader());
-
-            HttpResponse response = httpClient.execute(request);
-            responseString = EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            e.printStackTrace();
-            responseString = "{\"ErrorMessage\": \"" + e.toString() + "\"}";
         }
         return responseString;
     }

@@ -168,7 +168,43 @@ public class EoCortexRestConnector
     public void executeQuery(ObjectClass objClass, Filter query, ResultsHandler handler, OperationOptions options) {
         LOGGER.info("Execute query operation invoked");
 
-        // Query execution logic
+        if (!objClass.is(ObjectClass.ACCOUNT_NAME)) {
+            throw new IllegalArgumentException("Unsupported object class: " + objClass);
+        }
+
+        // Call the method to get all car plates
+        try {
+            List<PlateQueryData> plates = api.getAllCars();
+
+            // Process each car plate and convert it to a ConnectorObject
+            for (PlateQueryData plate : plates) {
+                ConnectorObjectBuilder cob = new ConnectorObjectBuilder();
+                cob.setObjectClass(ObjectClass.ACCOUNT);
+                cob.setName(plate.getExternal_owner_id());
+                cob.setUid(plate.getId()); // 'id' should always be present for a UID
+
+                // Add attributes, checking for null values
+                addAttributeToBuilder(cob, "licensePlateNumber", plate.getLicense_plate_number());
+                addAttributeToBuilder(cob, "externalId", plate.getExternal_id());
+                addAttributeToBuilder(cob, "external_sys_id", plate.getExternal_sys_id());
+                addAttributeToBuilder(cob, "external_owner_id", plate.getExternal_owner_id());
+                addAttributeToBuilder(cob, "additionalInfo", plate.getAdditional_info());
+                //addAttributeToBuilder(cob, "firstName", plate.get);
+                //addAttributeToBuilder(cob, "secondName", plate.getSecondName());
+                //addAttributeToBuilder(cob, "thirdName", plate.getThirdName());
+                //addAttributeToBuilder(cob, "model", plate.getModel());
+                //addAttributeToBuilder(cob, "color", plate.getColor());
+                //addAttributeToBuilder(cob, "groupIds", plate.getGroupIds());
+
+                // Pass the ConnectorObject to the handler
+                if (!handler.handle(cob.build())) {
+                    break;
+                }
+            }
+        } catch (Exception e) {
+            //TODO investigate logger parameters if this is ok ?
+            LOGGER.error("Error during query execution: {0}", e.getMessage());
+        }
     }
 
     @Override
@@ -204,5 +240,11 @@ public class EoCortexRestConnector
             }
         }
         return null;
+    }
+
+    private void addAttributeToBuilder(ConnectorObjectBuilder cob, String attributeName, Object attributeValue) {
+        if (attributeValue != null) {
+            cob.addAttribute(AttributeBuilder.build(attributeName, attributeValue));
+        }
     }
 }
