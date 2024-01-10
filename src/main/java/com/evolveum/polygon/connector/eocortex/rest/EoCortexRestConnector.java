@@ -204,21 +204,19 @@ public class EoCortexRestConnector
                 if(!api.hasError(objectJson)){
                     JsonObject jsonCarObject = gson.fromJson(objectJson, JsonObject.class);
 
-                    if(jsonCarObject.has("owner")){
-                        if(jsonCarObject.has("first_name")) addAttributeToBuilder(cob, "first_name", jsonCarObject.get("first_name").getAsString());
-                        if(jsonCarObject.has("second_name")) addAttributeToBuilder(cob, "second_name", jsonCarObject.get("second_name").getAsString());
-                        if(jsonCarObject.has("third_name")) addAttributeToBuilder(cob, "third_name", jsonCarObject.get("third_name").getAsString());
+                    // Accessing nested fields within "owner"
+                    if (jsonCarObject.has("owner")) {
+                        JsonObject ownerObject = jsonCarObject.getAsJsonObject("owner");
+                        if (ownerObject.has("first_name")) addAttributeToBuilder(cob, "first_name", ownerObject.get("first_name").getAsString());
+                        if (ownerObject.has("second_name")) addAttributeToBuilder(cob, "second_name", ownerObject.get("second_name").getAsString());
+                        if (ownerObject.has("third_name")) addAttributeToBuilder(cob, "third_name", ownerObject.get("third_name").getAsString());
                     }
-                    if(jsonCarObject.has("model")) addAttributeToBuilder(cob, "model", jsonCarObject.get("model").getAsString());
-                    if(jsonCarObject.has("color")) addAttributeToBuilder(cob, "color", jsonCarObject.get("color").getAsString());
-                    if(jsonCarObject.has("groups")) addAttributeToBuilder(cob, "groups", jsonCarObject.get("groups").getAsString());
+
+                    // Accessing top-level fields
+                    if (jsonCarObject.has("model")) addAttributeToBuilder(cob, "model", jsonCarObject.get("model").getAsString());
+                    if (jsonCarObject.has("color")) addAttributeToBuilder(cob, "color", jsonCarObject.get("color").getAsString());
+                    //TODO//if (jsonCarObject.has("groups")) addAttributeToBuilder(cob, "groups", jsonCarObject.get("groups").getAsString());
                 }
-                //addAttributeToBuilder(cob, "firstName", plate.get);
-                //addAttributeToBuilder(cob, "secondName", plate.getSecondName());
-                //addAttributeToBuilder(cob, "thirdName", plate.getThirdName());
-                //addAttributeToBuilder(cob, "model", plate.getModel());
-                //addAttributeToBuilder(cob, "color", plate.getColor());
-                //addAttributeToBuilder(cob, "groupIds", plate.getGroupIds());
 
                 // Pass the ConnectorObject to the handler
                 if (!handler.handle(cob.build())) {
