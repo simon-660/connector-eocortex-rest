@@ -7,6 +7,9 @@ package com.evolveum.polygon.connector.eocortex.rest;
 import java.io.IOException;
 import java.util.*;
 
+import com.google.gson.Gson;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.identityconnectors.common.CollectionUtil;
@@ -94,17 +97,17 @@ public class EoCortexRestConnector
         objClassBuilder.addAttributeInfo(nameAib.build());
 
         //objClassBuilder.addAttributeInfo(AttributeInfoBuilder.build(Name.NAME, String.class));
-        objClassBuilder.addAttributeInfo(AttributeInfoBuilder.build("firstName", String.class));
-        objClassBuilder.addAttributeInfo(AttributeInfoBuilder.build("secondName", String.class));
-        objClassBuilder.addAttributeInfo(AttributeInfoBuilder.build("thirdName", String.class));
-        objClassBuilder.addAttributeInfo(AttributeInfoBuilder.build("externalId", String.class));
+        objClassBuilder.addAttributeInfo(AttributeInfoBuilder.build("first_name", String.class));
+        objClassBuilder.addAttributeInfo(AttributeInfoBuilder.build("second_name", String.class));
+        objClassBuilder.addAttributeInfo(AttributeInfoBuilder.build("third_name", String.class));
+        objClassBuilder.addAttributeInfo(AttributeInfoBuilder.build("external_id", String.class));
         objClassBuilder.addAttributeInfo(AttributeInfoBuilder.build("external_sys_id", String.class));
         objClassBuilder.addAttributeInfo(AttributeInfoBuilder.build("external_owner_id", String.class));
-        objClassBuilder.addAttributeInfo(AttributeInfoBuilder.build("licensePlateNumber", String.class));
-        objClassBuilder.addAttributeInfo(AttributeInfoBuilder.build("additionalInfo", String.class));
+        objClassBuilder.addAttributeInfo(AttributeInfoBuilder.build("license_plate_number", String.class));
+        objClassBuilder.addAttributeInfo(AttributeInfoBuilder.build("additional_info", String.class));
         objClassBuilder.addAttributeInfo(AttributeInfoBuilder.build("model", String.class));
         objClassBuilder.addAttributeInfo(AttributeInfoBuilder.build("color", String.class));
-        objClassBuilder.addAttributeInfo(AttributeInfoBuilder.build("groupIds", String.class));
+        objClassBuilder.addAttributeInfo(AttributeInfoBuilder.build("groups", String.class));
 
         builder.defineObjectClass(objClassBuilder.build());
 
@@ -117,17 +120,17 @@ public class EoCortexRestConnector
 
         // Extracting attributes
         String name = getAndValidateAttribute(attributes, Name.NAME);
-        String firstName = getAndValidateAttribute(attributes, "firstName");
-        String secondName = getAndValidateAttribute(attributes, "secondName");
-        String thirdName = getAndValidateAttribute(attributes, "thirdName");
-        String externalId = getAndValidateAttribute(attributes, "externalId");
+        String firstName = getAndValidateAttribute(attributes, "first_name");
+        String secondName = getAndValidateAttribute(attributes, "second_name");
+        String thirdName = getAndValidateAttribute(attributes, "third_name");
+        String externalId = getAndValidateAttribute(attributes, "external_id");
         String externalSysId = getAndValidateAttribute(attributes, "external_sys_id");
         String externalOwnerId = getAndValidateAttribute(attributes, "external_owner_id");
-        String licensePlateNumber = getAndValidateAttribute(attributes, "licensePlateNumber");
-        String additionalInfo = getAndValidateAttribute(attributes, "additionalInfo");
+        String licensePlateNumber = getAndValidateAttribute(attributes, "license_plate_number");
+        String additionalInfo = getAndValidateAttribute(attributes, "additional_info");
         String model = getAndValidateAttribute(attributes, "model");
         String color = getAndValidateAttribute(attributes, "color");
-        String groupIds = getAndValidateAttribute(attributes, "groupIds");
+        String groupIds = getAndValidateAttribute(attributes, "groups");
 
         //TODO debug this
         //List<String> groupList = new ArrayList<>();
@@ -190,12 +193,26 @@ public class EoCortexRestConnector
                 }
                 cob.setUid(plate.getId()); // 'id' should always be present for a UID
 
-                // Add attributes, checking for null values
-                addAttributeToBuilder(cob, "licensePlateNumber", plate.getLicense_plate_number());
-                addAttributeToBuilder(cob, "externalId", plate.getExternal_id());
+                addAttributeToBuilder(cob, "license_plate_number", plate.getLicense_plate_number());
+                addAttributeToBuilder(cob, "external_id", plate.getExternal_id());
                 addAttributeToBuilder(cob, "external_sys_id", plate.getExternal_sys_id());
                 addAttributeToBuilder(cob, "external_owner_id", plate.getExternal_owner_id());
-                addAttributeToBuilder(cob, "additionalInfo", plate.getAdditional_info());
+                addAttributeToBuilder(cob, "additional_info", plate.getAdditional_info());
+
+                Gson gson = new Gson();
+                String objectJson = api.getCarDetails(plate.getId());
+                if(!api.hasError(objectJson)){
+                    JsonObject jsonCarObject = gson.fromJson(objectJson, JsonObject.class);
+
+                    if(jsonCarObject.has("owner")){
+                        if(jsonCarObject.has("first_name")) addAttributeToBuilder(cob, "first_name", jsonCarObject.get("first_name").getAsString());
+                        if(jsonCarObject.has("second_name")) addAttributeToBuilder(cob, "second_name", jsonCarObject.get("second_name").getAsString());
+                        if(jsonCarObject.has("third_name")) addAttributeToBuilder(cob, "third_name", jsonCarObject.get("third_name").getAsString());
+                    }
+                    if(jsonCarObject.has("model")) addAttributeToBuilder(cob, "model", jsonCarObject.get("model").getAsString());
+                    if(jsonCarObject.has("color")) addAttributeToBuilder(cob, "color", jsonCarObject.get("color").getAsString());
+                    if(jsonCarObject.has("groups")) addAttributeToBuilder(cob, "groups", jsonCarObject.get("groups").getAsString());
+                }
                 //addAttributeToBuilder(cob, "firstName", plate.get);
                 //addAttributeToBuilder(cob, "secondName", plate.getSecondName());
                 //addAttributeToBuilder(cob, "thirdName", plate.getThirdName());
@@ -216,8 +233,50 @@ public class EoCortexRestConnector
 
     @Override
     public Set<AttributeDelta> updateDelta(ObjectClass objClass, Uid uid, Set<AttributeDelta> attrsDelta, OperationOptions options) {
-        LOGGER.info("Update Delta operation invoked");
-        // Update Delta operation logic
+        LOGGER.info("Update Delta operation invoked for UID: " + uid.getUidValue());
+
+        if (!objClass.is(ObjectClass.ACCOUNT_NAME)) {
+            throw new IllegalArgumentException("Unsupported object class: " + objClass);
+        }
+
+        Gson gson = new Gson();
+        try {
+            String objectJson = api.getCarDetails(uid.getUidValue());
+            LOGGER.info("Delta uid load "+ api.hasError(objectJson));
+
+            JsonObject jsonCarObject = gson.fromJson(objectJson, JsonObject.class);
+
+            for (AttributeDelta delta : attrsDelta) {
+                String attributeName = delta.getName();
+                JsonElement newValue = null;
+
+                if (delta.getValuesToReplace() != null && !delta.getValuesToReplace().isEmpty()) {
+                    newValue = gson.toJsonTree(delta.getValuesToReplace().get(0));
+
+                    // Update top-level fields
+                    if (jsonCarObject.has(attributeName)) {
+                        jsonCarObject.add(attributeName, newValue);
+                    }
+                    // Update nested fields within "owner"
+                    else if (jsonCarObject.has("owner") && jsonCarObject.getAsJsonObject("owner").has(attributeName)) {
+                        jsonCarObject.getAsJsonObject("owner").add(attributeName, newValue);
+                    }
+
+                    LOGGER.info("Processed delta for attribute: " + attributeName);
+                }
+            }
+
+            String updatedJson = gson.toJson(jsonCarObject);
+            String updateResponse = api.updateCar(uid.getUidValue(), updatedJson);
+            if(api.hasError(updateResponse)) updateResponse = api.parseErrorMessage(updateResponse);
+            else updateResponse = "OK";
+
+            LOGGER.info("Processed delta update ->" + updateResponse);
+
+        } catch (Exception e) {
+            LOGGER.error("Error during update delta operation: " + e.getMessage(), e);
+            throw new ConnectorException("Error during update delta operation", e);
+        }
         return null;
     }
     
