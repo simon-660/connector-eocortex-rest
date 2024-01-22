@@ -131,7 +131,7 @@ public class EoCortexRestConnector
         String additionalInfo = getAndValidateAttribute(attributes, "additional_info");
         String model = getAndValidateAttribute(attributes, "model");
         String color = getAndValidateAttribute(attributes, "color");
-        String groupIds = getAndValidateAttribute(attributes, "groups");
+        String groupIds = getAndValidateAttribute(attributes, "groups"); //TODO upraviť nazov a dole ho specialne ošetriť
 
         List<String> groupList = null; // Initialize groupList as null
 
@@ -195,9 +195,8 @@ public class EoCortexRestConnector
                     EqualsFilter equalsFilter = (EqualsFilter) query;
                     String attributeName = equalsFilter.getAttribute().getName();
                     Object attributeValue = equalsFilter.getAttribute().getValue().get(0);
-                    LOGGER.info(Uid.NAME + " " + attributeName);
                     if (Uid.NAME.equals(attributeName)) {
-                        LOGGER.info("Query EqualsFilter - "+attributeName + " " + attributeValue + " : " +plate.getId());
+                        //LOGGER.info("Query EqualsFilter - "+attributeName + " " + attributeValue + " : " +plate.getId());
                         if(plate.getId().equals(attributeValue)) LOGGER.info("Query EqualsFilter found id");
                         else continue;
                     } else {
@@ -227,7 +226,7 @@ public class EoCortexRestConnector
                 Gson gson = new Gson();
                 String objectJson = api.getCarDetails(plate.getId());
                 if(!api.hasError(objectJson)){
-                    LOGGER.info("Query details");
+                    //LOGGER.info("Query details");
                     JsonObject jsonCarObject = gson.fromJson(objectJson, JsonObject.class);
 
                     // Accessing nested fields within "owner"
@@ -236,7 +235,7 @@ public class EoCortexRestConnector
                         if (ownerObject.has("first_name")) addAttributeToBuilder(cob, "first_name", ownerObject.get("first_name").getAsString());
                         if (ownerObject.has("second_name")) addAttributeToBuilder(cob, "second_name", ownerObject.get("second_name").getAsString());
                         if (ownerObject.has("third_name")) addAttributeToBuilder(cob, "third_name", ownerObject.get("third_name").getAsString());
-                        if (ownerObject.has("first_name")) LOGGER.info("Query details"+ ownerObject.get("first_name").getAsString());
+                        //if (ownerObject.has("first_name")) LOGGER.info("Query details"+ ownerObject.get("first_name").getAsString());
                     }
 
                     // Accessing top-level fields
@@ -280,11 +279,17 @@ public class EoCortexRestConnector
 
                     // Update top-level fields
                     if (jsonCarObject.has(attributeName)) {
+                        LOGGER.info("Updating value top-level: "+ newValue);
                         jsonCarObject.add(attributeName, newValue);
                     }
                     // Update nested fields within "owner"
                     else if (jsonCarObject.has("owner") && jsonCarObject.getAsJsonObject("owner").has(attributeName)) {
                         jsonCarObject.getAsJsonObject("owner").add(attributeName, newValue);
+                    }
+                    // Update nested fields within "groups"
+                    //TODO nazov problem groups a jeho id a najde ho hore
+                    else if (jsonCarObject.has("groups") && jsonCarObject.getAsJsonObject("groups").has(attributeName)) {
+                        jsonCarObject.getAsJsonObject("groups").add(attributeName, newValue);
                     }
 
                     LOGGER.info("Processed delta for attribute: " + attributeName);
@@ -295,6 +300,8 @@ public class EoCortexRestConnector
             String updateResponse = api.updateCar(uid.getUidValue(), updatedJson);
             if(api.hasError(updateResponse)) updateResponse = api.parseErrorMessage(updateResponse);
             else updateResponse = "OK";
+
+            LOGGER.info("Size of updatedJson :" + updatedJson.length());
 
             LOGGER.info("Processed delta update ->" + updateResponse);
 
