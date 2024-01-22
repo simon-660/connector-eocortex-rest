@@ -18,6 +18,7 @@ import org.identityconnectors.framework.common.exceptions.ConnectorException;
 import org.identityconnectors.framework.common.exceptions.ConnectorIOException;
 import org.identityconnectors.framework.common.exceptions.InvalidAttributeValueException;
 import org.identityconnectors.framework.common.objects.*;
+import org.identityconnectors.framework.common.objects.filter.EqualsFilter;
 import org.identityconnectors.framework.common.objects.filter.Filter;
 import org.identityconnectors.framework.common.objects.filter.FilterTranslator;
 import org.identityconnectors.framework.spi.Configuration;
@@ -132,11 +133,14 @@ public class EoCortexRestConnector
         String color = getAndValidateAttribute(attributes, "color");
         String groupIds = getAndValidateAttribute(attributes, "groups");
 
-        //TODO debug this
-        //List<String> groupList = new ArrayList<>();
-        //groupList.add(groupIds);
+        List<String> groupList = null; // Initialize groupList as null
 
-        String addCarJson = api.createJsonString(firstName, secondName, thirdName, externalId, externalSysId, externalOwnerId, licensePlateNumber, additionalInfo, model, color, null);
+        if (groupIds != null && !groupIds.isEmpty()) {
+            groupList = new ArrayList<>();
+            groupList.add(groupIds);
+        }
+
+        String addCarJson = api.createJsonString(firstName, secondName, thirdName, externalId, externalSysId, externalOwnerId, licensePlateNumber, additionalInfo, model, color, groupList);
 
         //LOGGER.info("eocortex : Create op info ->"+ externalSysId + "," + name + " ");
 
@@ -158,7 +162,9 @@ public class EoCortexRestConnector
         LOGGER.info("eocortex : Delete operation invoked");
 
         //String carFindUid = api.parseUidFromResponse(api.findCars(uid.getUidValue(),null));
-        String deleteResult = api.deleteCar(uid.getUidValue());
+        //TODO TURNED OFF
+        String deleteResult = "{\"ErrorMessage\":\"TURNED OFF - funkcia zakomentovana\"}";
+        //api.deleteCar(uid.getUidValue());
 
         if(api.hasError(deleteResult)) {
             LOGGER.error("EoCortex : delete error :"+ api.parseErrorMessage(deleteResult));
@@ -180,14 +186,33 @@ public class EoCortexRestConnector
         try {
             List<PlateQueryData> plates = api.getAllCars();
 
+            LOGGER.info("Query got results : "+ plates.size());
+
             // Process each car plate and convert it to a ConnectorObject
             for (PlateQueryData plate : plates) {
+
+                if (query instanceof EqualsFilter) {
+                    EqualsFilter equalsFilter = (EqualsFilter) query;
+                    String attributeName = equalsFilter.getAttribute().getName();
+                    Object attributeValue = equalsFilter.getAttribute().getValue().get(0);
+                    LOGGER.info(Uid.NAME + " " + attributeName);
+                    if (Uid.NAME.equals(attributeName)) {
+                        LOGGER.info("Query EqualsFilter - "+attributeName + " " + attributeValue + " : " +plate.getId());
+                        if(plate.getId().equals(attributeValue)) LOGGER.info("Query EqualsFilter found id");
+                        else continue;
+                    } else {
+                        // Handle other attributes or throw an exception
+                        throw new UnsupportedOperationException("Filter type not supported");
+                    }
+                }
+
                 ConnectorObjectBuilder cob = new ConnectorObjectBuilder();
                 cob.setObjectClass(ObjectClass.ACCOUNT);
 
                 //if name is empty the car may not be added by midpoint so for listing purposes return uid
                 if (plate.getExternal_owner_id().isEmpty()) {
-                    cob.setName(plate.getId());
+                    //cob.setName(plate.getId());
+                    cob.setName(plate.getLicense_plate_number());
                 } else {
                     cob.setName(plate.getExternal_owner_id());
                 }
@@ -202,6 +227,7 @@ public class EoCortexRestConnector
                 Gson gson = new Gson();
                 String objectJson = api.getCarDetails(plate.getId());
                 if(!api.hasError(objectJson)){
+                    LOGGER.info("Query details");
                     JsonObject jsonCarObject = gson.fromJson(objectJson, JsonObject.class);
 
                     // Accessing nested fields within "owner"
@@ -210,6 +236,7 @@ public class EoCortexRestConnector
                         if (ownerObject.has("first_name")) addAttributeToBuilder(cob, "first_name", ownerObject.get("first_name").getAsString());
                         if (ownerObject.has("second_name")) addAttributeToBuilder(cob, "second_name", ownerObject.get("second_name").getAsString());
                         if (ownerObject.has("third_name")) addAttributeToBuilder(cob, "third_name", ownerObject.get("third_name").getAsString());
+                        if (ownerObject.has("first_name")) LOGGER.info("Query details"+ ownerObject.get("first_name").getAsString());
                     }
 
                     // Accessing top-level fields
