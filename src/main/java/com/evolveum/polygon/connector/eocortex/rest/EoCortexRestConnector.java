@@ -4,19 +4,17 @@
 package com.evolveum.polygon.connector.eocortex.rest;
 
 
-import java.io.IOException;
 import java.util.*;
+import java.util.stream.Collectors;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClientBuilder;
 import org.identityconnectors.common.CollectionUtil;
 import org.identityconnectors.common.logging.Log;
 import org.identityconnectors.framework.common.exceptions.ConnectorException;
-import org.identityconnectors.framework.common.exceptions.ConnectorIOException;
-import org.identityconnectors.framework.common.exceptions.InvalidAttributeValueException;
 import org.identityconnectors.framework.common.objects.*;
 import org.identityconnectors.framework.common.objects.filter.EqualsFilter;
 import org.identityconnectors.framework.common.objects.filter.Filter;
@@ -50,8 +48,8 @@ public class EoCortexRestConnector
         LOGGER.info("eocortex : init operation invoked");
 
         this.configuration = (EoCortexRestConfiguration) cfg;
+
         //TODO this.configuration.validate();
-        //this.httpClient = HttpClientBuilder.create().build();
 
         String apiUrl = this.configuration.getConnectionUrl();
         String username = this.configuration.getUsername();
@@ -64,7 +62,6 @@ public class EoCortexRestConnector
     @Override
     public void dispose() {
         LOGGER.info("Dispose");
-        // Simplified dispose logic
     }
 
     @Override
@@ -104,11 +101,19 @@ public class EoCortexRestConnector
         objClassBuilder.addAttributeInfo(AttributeInfoBuilder.build("external_id", String.class));
         objClassBuilder.addAttributeInfo(AttributeInfoBuilder.build("external_sys_id", String.class));
         objClassBuilder.addAttributeInfo(AttributeInfoBuilder.build("external_owner_id", String.class));
-        objClassBuilder.addAttributeInfo(AttributeInfoBuilder.build("license_plate_number", String.class));
         objClassBuilder.addAttributeInfo(AttributeInfoBuilder.build("additional_info", String.class));
         objClassBuilder.addAttributeInfo(AttributeInfoBuilder.build("model", String.class));
         objClassBuilder.addAttributeInfo(AttributeInfoBuilder.build("color", String.class));
-        objClassBuilder.addAttributeInfo(AttributeInfoBuilder.build("groups", String.class));
+
+        AttributeInfoBuilder licensePlateNumberAib = new AttributeInfoBuilder("license_plate_number");
+        licensePlateNumberAib.setType(String.class);
+        licensePlateNumberAib.setMultiValued(true);
+        objClassBuilder.addAttributeInfo(licensePlateNumberAib.build());
+
+        AttributeInfoBuilder groupsIdAib = new AttributeInfoBuilder("groups_id");
+        groupsIdAib.setType(String.class);
+        groupsIdAib.setMultiValued(true);
+        objClassBuilder.addAttributeInfo(groupsIdAib.build());
 
         builder.defineObjectClass(objClassBuilder.build());
 
@@ -131,7 +136,7 @@ public class EoCortexRestConnector
         String additionalInfo = getAndValidateAttribute(attributes, "additional_info");
         String model = getAndValidateAttribute(attributes, "model");
         String color = getAndValidateAttribute(attributes, "color");
-        String groupIds = getAndValidateAttribute(attributes, "groups"); //TODO upraviť nazov a dole ho specialne ošetriť
+        String groupIds = getAndValidateAttribute(attributes, "groups_id");
 
         List<String> groupList = null; // Initialize groupList as null
 
@@ -140,21 +145,20 @@ public class EoCortexRestConnector
             groupList.add(groupIds);
         }
 
-        String addCarJson = api.createJsonString(firstName, secondName, thirdName, externalId, externalSysId, externalOwnerId, licensePlateNumber, additionalInfo, model, color, groupList);
+        //String addCarJson = api.createJsonString(firstName, secondName, thirdName, externalId, externalSysId, externalOwnerId, licensePlateNumber, additionalInfo, model, color, groupList);
 
         //LOGGER.info("eocortex : Create op info ->"+ externalSysId + "," + name + " ");
 
-        //TODO nemôžem posielať json do logu lebo sa ho snaži spracovať !!
-        //LOGGER.info("eocortex : Create op info ->" + addCarJson);
+        //String addCarResult = api.addCar(addCarJson);
 
-        String addCarResult = api.addCar(addCarJson);
+        //String uidNewCar = null;
+        //if(!api.hasError(addCarResult)) uidNewCar = api.parseUidFromResponse(addCarResult);
 
-        String uidNewCar = null;
-        if(!api.hasError(addCarResult)) uidNewCar = api.parseUidFromResponse(addCarResult);
+        //LOGGER.info("EoCortex : Create car id ->" + uidNewCar);
 
-        LOGGER.info("EoCortex : Create car id ->" + uidNewCar);
 
-        return new Uid(uidNewCar);
+        LOGGER.info("disabled for developement");
+        return new Uid(name);
     }
 
     @Override
@@ -167,7 +171,7 @@ public class EoCortexRestConnector
         //api.deleteCar(uid.getUidValue());
 
         if(api.hasError(deleteResult)) {
-            LOGGER.error("EoCortex : delete error :"+ api.parseErrorMessage(deleteResult));
+            LOGGER.error("EoCortex : delete error :"); //+ api.parseErrorMessage(deleteResult)
         } else {
             LOGGER.info("eocortex : delete ->"+ uid.getUidValue());
         }
@@ -176,81 +180,93 @@ public class EoCortexRestConnector
     @Override
     public void executeQuery(ObjectClass objClass, Filter query, ResultsHandler handler, OperationOptions options) {
         LOGGER.info("Execute query operation invoked");
+        List<PersonPlates> personPlatesList = new ArrayList<>();
 
         //TODO learn how to filters work
         if (!objClass.is(ObjectClass.ACCOUNT_NAME)) {
             throw new IllegalArgumentException("Unsupported object class: " + objClass);
         }
 
-        // Call the method to get all car plates
         try {
-            List<PlateQueryData> plates = api.getAllCars();
+            //TODO oštriť nenajdenu značku + thow special exception
+            if (query instanceof EqualsFilter) {
+                EqualsFilter equalsFilter = (EqualsFilter) query;
+                String attributeName = equalsFilter.getAttribute().getName();
+                Object attributeValue = equalsFilter.getAttribute().getValue().get(0);
+                String plateId = (String) attributeValue;
 
-            LOGGER.info("Query got results : "+ plates.size());
 
-            // Process each car plate and convert it to a ConnectorObject
-            for (PlateQueryData plate : plates) {
-
-                if (query instanceof EqualsFilter) {
-                    EqualsFilter equalsFilter = (EqualsFilter) query;
-                    String attributeName = equalsFilter.getAttribute().getName();
-                    Object attributeValue = equalsFilter.getAttribute().getValue().get(0);
-                    if (Uid.NAME.equals(attributeName)) {
-                        //LOGGER.info("Query EqualsFilter - "+attributeName + " " + attributeValue + " : " +plate.getId());
-                        if(plate.getId().equals(attributeValue)) LOGGER.info("Query EqualsFilter found id");
-                        else continue;
-                    } else {
-                        // Handle other attributes or throw an exception
-                        throw new UnsupportedOperationException("Filter type not supported");
+                if (Uid.NAME.equals(attributeName)) {
+                    //LOGGER.info("Query EqualsFilter - "+attributeName + " " + attributeValue + " : " +plate.getId());
+                    try {
+                        List<PlateQueryData> plates_query = api.listByOwner(plateId);
+                        personPlatesList.add(api.convertQueryPersonPlate(plates_query));
+                        LOGGER.info("EqualsFilter :"+ plateId);
                     }
-                }
-
-                ConnectorObjectBuilder cob = new ConnectorObjectBuilder();
-                cob.setObjectClass(ObjectClass.ACCOUNT);
-
-                //if name is empty the car may not be added by midpoint so for listing purposes return uid
-                if (plate.getExternal_owner_id().isEmpty()) {
-                    //cob.setName(plate.getId());
-                    cob.setName(plate.getLicense_plate_number());
+                    catch(Exception e){
+                        LOGGER.info("Error EqualsFilter for name: "+attributeName+" value: "+attributeValue);
+                    }
                 } else {
-                    cob.setName(plate.getExternal_owner_id());
-                }
-                cob.setUid(plate.getId()); // 'id' should always be present for a UID
-
-                addAttributeToBuilder(cob, "license_plate_number", plate.getLicense_plate_number());
-                addAttributeToBuilder(cob, "external_id", plate.getExternal_id());
-                addAttributeToBuilder(cob, "external_sys_id", plate.getExternal_sys_id());
-                addAttributeToBuilder(cob, "external_owner_id", plate.getExternal_owner_id());
-                addAttributeToBuilder(cob, "additional_info", plate.getAdditional_info());
-
-                Gson gson = new Gson();
-                String objectJson = api.getCarDetails(plate.getId());
-                if(!api.hasError(objectJson)){
-                    //LOGGER.info("Query details");
-                    JsonObject jsonCarObject = gson.fromJson(objectJson, JsonObject.class);
-
-                    // Accessing nested fields within "owner"
-                    if (jsonCarObject.has("owner")) {
-                        JsonObject ownerObject = jsonCarObject.getAsJsonObject("owner");
-                        if (ownerObject.has("first_name")) addAttributeToBuilder(cob, "first_name", ownerObject.get("first_name").getAsString());
-                        if (ownerObject.has("second_name")) addAttributeToBuilder(cob, "second_name", ownerObject.get("second_name").getAsString());
-                        if (ownerObject.has("third_name")) addAttributeToBuilder(cob, "third_name", ownerObject.get("third_name").getAsString());
-                        //if (ownerObject.has("first_name")) LOGGER.info("Query details"+ ownerObject.get("first_name").getAsString());
-                    }
-
-                    // Accessing top-level fields
-                    if (jsonCarObject.has("model")) addAttributeToBuilder(cob, "model", jsonCarObject.get("model").getAsString());
-                    if (jsonCarObject.has("color")) addAttributeToBuilder(cob, "color", jsonCarObject.get("color").getAsString());
-                    //TODO//if (jsonCarObject.has("groups")) addAttributeToBuilder(cob, "groups", jsonCarObject.get("groups").getAsString());
+                    // Handle other attributes or throw an exception
+                    throw new UnsupportedOperationException("Filter type not supported");
                 }
 
-                // Pass the ConnectorObject to the handler
+            }
+            else { //all plates
+                personPlatesList = api.createAllPersonPlatesList();
+                LOGGER.info("ALL Query got results : "+ personPlatesList.size());
+            }
+
+            ConnectorObjectBuilder cob = new ConnectorObjectBuilder();
+            cob.setObjectClass(ObjectClass.ACCOUNT);
+
+            for(PersonPlates personplate : personPlatesList){
+                cob.setName(personplate.getExternal_owner_id());
+                cob.setUid(personplate.getExternal_owner_id());
+
+                addAttributeToBuilder(cob, "external_id", personplate.getExternal_id());
+                addAttributeToBuilder(cob, "external_sys_id", personplate.getExternal_sys_id());
+                addAttributeToBuilder(cob, "external_owner_id", personplate.getExternal_owner_id());
+                addAttributeToBuilder(cob, "additional_info", personplate.getAdditional_info());
+
+                addAttributeToBuilder(cob, "first_name", personplate.getFirst_name());
+                addAttributeToBuilder(cob, "second_name", personplate.getSecond_name());
+                addAttributeToBuilder(cob, "third_name", personplate.getThird_name());
+                addAttributeToBuilder(cob, "model", personplate.getModel());
+                addAttributeToBuilder(cob, "color", personplate.getColor());
+
+                if(personplate.getPlates() != null) {
+                    List<String> licensePlateNumbers = personplate.getPlates().stream()
+                            .map(PersonPlates.PlateDetails::getLicense_plate_number)
+                            .collect(Collectors.toList());
+                    //addAttributeToBuilder(cob, "license_plate_number", licensePlateNumbers);
+                    //cob.addAttribute("license_plate_number", licensePlateNumbers);
+
+                    AttributeBuilder abPlates = new AttributeBuilder();
+                    abPlates.setName("license_plate_number");
+                    abPlates.addValue(licensePlateNumbers);
+                    cob.addAttribute(abPlates.build());
+                }
+
+                if(personplate.getGroups() != null) {
+                    List<String> groupIds = personplate.getGroups().stream()
+                            .map(PersonPlates.Group::getId)
+                            .collect(Collectors.toList());
+                    //addAttributeToBuilder(cob, "groups_id", groupIds);
+
+                    AttributeBuilder abGroups = new AttributeBuilder();
+                    abGroups.setName("groups_id");
+                    abGroups.addValue(groupIds);
+                    cob.addAttribute(abGroups.build());
+                }
+
+                LOGGER.info("Handling");
                 if (!handler.handle(cob.build())) {
                     break;
                 }
             }
+
         } catch (Exception e) {
-            //TODO investigate logger parameters if this is ok ?
             LOGGER.error("Error during query execution: {0}", e.getMessage());
         }
     }
@@ -263,6 +279,7 @@ public class EoCortexRestConnector
             throw new IllegalArgumentException("Unsupported object class: " + objClass);
         }
 
+        /*
         Gson gson = new Gson();
         try {
             String objectJson = api.getCarDetails(uid.getUidValue());
@@ -286,10 +303,17 @@ public class EoCortexRestConnector
                     else if (jsonCarObject.has("owner") && jsonCarObject.getAsJsonObject("owner").has(attributeName)) {
                         jsonCarObject.getAsJsonObject("owner").add(attributeName, newValue);
                     }
-                    // Update nested fields within "groups"
-                    //TODO nazov problem groups a jeho id a najde ho hore
-                    else if (jsonCarObject.has("groups") && jsonCarObject.getAsJsonObject("groups").has(attributeName)) {
-                        jsonCarObject.getAsJsonObject("groups").add(attributeName, newValue);
+                    // Handling the 'groups' attribute for a single value
+                    // TODO prepare update for multiple values
+                    else if ("group_id".equals(attributeName)) {
+                        JsonArray groupsArray = jsonCarObject.getAsJsonArray("groups");
+                        if (groupsArray == null) {
+                            groupsArray = new JsonArray();
+                        }
+                        JsonObject groupObject = new JsonObject();
+                        groupObject.add("id", newValue);
+                        groupsArray.add(groupObject);
+                        jsonCarObject.add("groups", groupsArray);
                     }
 
                     LOGGER.info("Processed delta for attribute: " + attributeName);
@@ -309,6 +333,7 @@ public class EoCortexRestConnector
             LOGGER.error("Error during update delta operation: " + e.getMessage(), e);
             throw new ConnectorException("Error during update delta operation", e);
         }
+         */
         return null;
     }
     

@@ -1,6 +1,6 @@
 package com.evolveum.polygon.connector.eocortex.rest;
 
-import com.google.gson.Gson;
+import com.google.gson.*;
 import com.google.gson.reflect.TypeToken;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.http.HttpResponse;
@@ -19,12 +19,14 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.IOException;
+import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
-import java.util.Base64;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 
 public class EocortexApi {
+    //APi integration layer for eocortex system, version with grouping by external_owner_id
+
     private String apiUrl;
     private String username;
     private String password;
@@ -35,13 +37,10 @@ public class EocortexApi {
         this.password = DigestUtils.md5Hex(password).toUpperCase(); //MD5 hash of password needed for eocortex
     }
 
-    //TODO getUidFromCar
-
     private String getEncodedAuthHeader() {
         String auth = username + ":" + password;
         return "Basic " + Base64.getEncoder().encodeToString(auth.getBytes(StandardCharsets.UTF_8));
     }
-
     public boolean hasError(String jsonResponse) {
         try {
             JSONObject responseObj = new JSONObject(jsonResponse);
@@ -51,39 +50,6 @@ public class EocortexApi {
             return false;
         }
     }
-
-    public String parseErrorMessage(String jsonError) {
-        try {
-            JSONObject jsonObj = new JSONObject(jsonError);
-            return jsonObj.optString("ErrorMessage", "Unknown error"); // Default message if key not found
-        } catch (JSONException e) {
-            return "Error parsing error message: " + e.getMessage(); // Return parsing error
-        }
-    }
-
-    public String parseUidFromResponse(String jsonResponse) {
-        try {
-            JSONObject responseObj = new JSONObject(jsonResponse);
-
-            if (responseObj.has("plates")) {
-                JSONArray platesArray = responseObj.getJSONArray("plates");
-
-                if (platesArray.length() > 0) {
-                    JSONObject firstPlate = platesArray.getJSONObject(0);
-                    return firstPlate.optString("id", "{\"ErrorMessage\": \"ID not found\"}");
-                }
-                else{
-                    return "{\"ErrorMessage\": \"Plates array not found\"}";
-                }
-            } else {
-                return responseObj.optString("id", "{\"ErrorMessage\": \"ID not found\"}");
-            }
-        } catch (JSONException e) {
-            String jsonCustomErrorString = "{\"ErrorMessage\": \"" + e.toString() + "\"}";
-            return jsonCustomErrorString;
-        }
-    }
-
     public boolean isSearchResultEmpty(String jsonResponse) {
         try {
             JSONObject responseObj = new JSONObject(jsonResponse);
@@ -93,7 +59,6 @@ public class EocortexApi {
             return true; //return false this is error handling
         }
     }
-
     public boolean testConnection() {
         try (CloseableHttpClient httpClient = HttpClientBuilder.create().build()) {
             HttpGet request = new HttpGet(apiUrl + "/cars"); //This api works with cars module so this checks this part of api if avail.
@@ -108,160 +73,6 @@ public class EocortexApi {
             //e.printStackTrace();
             return false;
         }
-    }
-
-    public String createJsonString(
-            String firstName, String secondName, String thirdName, String externalId,
-            String external_sys_id, String external_owner_id, String licensePlateNumber,
-            String additionalInfo, String model, String color, List<String> groupIds) {
-
-        JSONObject owner = new JSONObject();
-        if (firstName != null && !firstName.isEmpty()) owner.put("first_name", firstName);
-        if (secondName != null && !secondName.isEmpty()) owner.put("second_name", secondName);
-        if (thirdName != null && !thirdName.isEmpty()) owner.put("third_name", thirdName);
-
-        JSONArray groups = new JSONArray();
-        if (groupIds != null) {
-            for (String groupId : groupIds) {
-                JSONObject group = new JSONObject();
-                group.put("id", groupId);
-                groups.put(group);
-            }
-        }
-
-        JSONObject json = new JSONObject();
-        if(!owner.isEmpty())json.put("owner", owner);
-        //if (id != null) json.put("id", id);
-        if (externalId != null) json.put("external_id", externalId);
-        if (external_sys_id != null) json.put("external_sys_id", external_sys_id);
-        if (external_owner_id != null) json.put("external_owner_id", external_owner_id);
-        if (licensePlateNumber != null) json.put("license_plate_number", licensePlateNumber);
-        if (additionalInfo != null) json.put("additional_info", additionalInfo);
-        if (model != null) json.put("model", model);
-        if (color != null) json.put("color", color);
-        if (!groups.isEmpty()) json.put("groups", groups);
-
-        return json.toString();
-    }
-
-    public String updateJsonString(
-            String existingJsonString,
-            String firstName, String secondName, String thirdName,
-            String externalId, String external_sys_id, String external_owner_id,
-            String licensePlateNumber, String additionalInfo, String model,
-            String color, List<String> groupIds) throws JSONException {
-
-        //TODO ošetriť vstup
-        JSONObject json = new JSONObject(existingJsonString);
-
-        // Update owner fields only if any owner detail is provided
-        if (firstName != null || secondName != null || thirdName != null) {
-            JSONObject owner = json.optJSONObject("owner");
-            if (owner == null) {
-                owner = new JSONObject();
-                json.put("owner", owner);
-            }
-            if (firstName != null) owner.put("first_name", firstName);
-            if (secondName != null) owner.put("second_name", secondName);
-            if (thirdName != null) owner.put("third_name", thirdName);
-        }
-
-        // Update or add other fields
-        if (externalId != null) json.put("external_id", externalId);
-        if (external_sys_id != null) json.put("external_sys_id", external_sys_id);
-        if (external_owner_id != null) json.put("external_owner_id", external_owner_id);
-        if (licensePlateNumber != null) json.put("license_plate_number", licensePlateNumber);
-        if (additionalInfo != null) json.put("additional_info", additionalInfo);
-        if (model != null) json.put("model", model);
-        if (color != null) json.put("color", color);
-
-        // Update or add groups
-        if (groupIds != null) {
-            JSONArray groups = new JSONArray();
-            for (String groupId : groupIds) {
-                JSONObject group = new JSONObject();
-                group.put("id", groupId);
-                groups.put(group);
-            }
-            json.put("groups", groups);
-        }
-
-        return json.toString();
-    }
-
-    public String addCar(String jsonStringParam) {
-        String responseString = null;
-        try (CloseableHttpClient httpClient = HttpClientBuilder.create().build()) {
-            HttpPost request = new HttpPost(apiUrl + "/cars");
-            request.setHeader("Authorization", getEncodedAuthHeader());
-            request.setHeader("Content-Type", "application/json");
-
-            //String jsonInputString = String.format(
-            //        "{\"license_plate_number\": \"%s\", \"external_id\": \"%s\", \"additional_info\": \"%s\"}",
-            //        licensePlateNumber, externalId, additionalInfo);
-            StringEntity requestEntity = new StringEntity(jsonStringParam, StandardCharsets.UTF_8);
-            request.setEntity(requestEntity);
-
-            HttpResponse response = httpClient.execute(request);
-            responseString = EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
-        } catch (Exception e) {
-            String jsonCustomErrorString = "{\"ErrorMessage\": \"" + e.toString() + "\"}";
-            return jsonCustomErrorString;
-        }
-        return responseString;
-    }
-
-    //TODO license plate required in update
-    public String updateCar(String carId, String jsonBody) {
-        String responseString = null;
-        try (CloseableHttpClient httpClient = HttpClientBuilder.create().build()) {
-            HttpPut request = new HttpPut(apiUrl + "/cars/" + carId);
-            request.setHeader("Authorization", getEncodedAuthHeader());
-            request.setHeader("Content-Type", "application/json");
-
-            StringEntity requestEntity = new StringEntity(jsonBody, StandardCharsets.UTF_8);
-            request.setEntity(requestEntity);
-
-            HttpResponse response = httpClient.execute(request);
-            responseString = EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
-        } catch (Exception e) {
-            String jsonCustomErrorString = "{\"ErrorMessage\": \"" + e.toString() + "\"}";
-            return jsonCustomErrorString;
-        }
-        return responseString;
-    }
-
-    public String findCars(String externalOwnerId, String licensePlateNumber) {
-        String responseString = null;
-        try (CloseableHttpClient httpClient = HttpClientBuilder.create().build()) {
-            URIBuilder builder = new URIBuilder(apiUrl + "/cars");
-
-            // Constructing the filter query
-            StringBuilder filterQuery = new StringBuilder();
-            if (externalOwnerId != null && !externalOwnerId.isEmpty()) {
-                filterQuery.append("external_owner_id='").append(externalOwnerId).append("'");
-            }
-            if (licensePlateNumber != null && !licensePlateNumber.isEmpty()) {
-                if (filterQuery.length() > 0) {
-                    filterQuery.append(" AND ");
-                }
-                filterQuery.append("license_plate_number='").append(licensePlateNumber).append("'");
-            }
-
-            if (filterQuery.length() > 0) {
-                builder.addParameter("filter", filterQuery.toString());
-            }
-
-            HttpGet request = new HttpGet(builder.build());
-            request.setHeader("Authorization", getEncodedAuthHeader());
-
-            HttpResponse response = httpClient.execute(request);
-            responseString = EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
-        } catch (Exception e) {
-            String jsonCustomErrorString = "{\"ErrorMessage\": \"" + e.toString() + "\"}";
-            return jsonCustomErrorString;
-        }
-        return responseString;
     }
 
     public List<PlateQueryData> getAllCars() {
@@ -286,21 +97,31 @@ public class EocortexApi {
         }
     }
 
-    public String getCarDetails(String carId) {
-        String responseString = null;
+    public List<PlateQueryData> listByOwner(String externalOwnerId) {
+        List<PlateQueryData> platesList = new ArrayList<>();
         try (CloseableHttpClient httpClient = HttpClientBuilder.create().build()) {
-            URIBuilder builder = new URIBuilder(apiUrl + "/cars/" + carId);
+            URIBuilder builder = new URIBuilder(apiUrl + "/cars");
+
+            if (externalOwnerId != null && !externalOwnerId.isEmpty()) {
+                builder.addParameter("filter", "external_owner_id='" + externalOwnerId + "'");
+            }
 
             HttpGet request = new HttpGet(builder.build());
             request.setHeader("Authorization", getEncodedAuthHeader());
 
             HttpResponse response = httpClient.execute(request);
-            responseString = EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
+            String responseString = EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
+
+
+            JSONObject responseObject = new JSONObject(responseString);
+            JSONArray platesArray = responseObject.getJSONArray("plates");
+
+            Type listType = new TypeToken<List<PlateQueryData>>(){}.getType();
+            platesList = new Gson().fromJson(platesArray.toString(), listType);
         } catch (Exception e) {
-            String jsonCustomErrorString = "{\"ErrorMessage\": \"" + e.toString() + "\"}";
-            return jsonCustomErrorString;
+            e.printStackTrace();
         }
-        return responseString;
+        return platesList;
     }
 
     public String deleteCar(String carId) {
@@ -318,37 +139,188 @@ public class EocortexApi {
         return responseString;
     }
 
-    public String listGroupsAndFindByName(String groupName) {
+    public String addCar(String jsonStringParam) {
         String responseString = null;
         try (CloseableHttpClient httpClient = HttpClientBuilder.create().build()) {
-            HttpGet request = new HttpGet(apiUrl + "/cars-groups");
+            HttpPost request = new HttpPost(apiUrl + "/cars");
             request.setHeader("Authorization", getEncodedAuthHeader());
+            request.setHeader("Content-Type", "application/json");
+
+            StringEntity requestEntity = new StringEntity(jsonStringParam, StandardCharsets.UTF_8);
+            request.setEntity(requestEntity);
 
             HttpResponse response = httpClient.execute(request);
             responseString = EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
-
-            return findGroupByName(responseString, groupName);
         } catch (Exception e) {
             String jsonCustomErrorString = "{\"ErrorMessage\": \"" + e.toString() + "\"}";
             return jsonCustomErrorString;
         }
+        return responseString;
     }
 
-    private String findGroupByName(String jsonResponse, String groupName) {
-        try {
-            JSONObject responseObject = new JSONObject(jsonResponse);
-            JSONArray groups = responseObject.getJSONArray("groups");
+    public String updateCar(String carId, String jsonBody) {
+        String responseString = null;
+        try (CloseableHttpClient httpClient = HttpClientBuilder.create().build()) {
+            HttpPut request = new HttpPut(apiUrl + "/cars/" + carId);
+            request.setHeader("Authorization", getEncodedAuthHeader());
+            request.setHeader("Content-Type", "application/json");
 
-            for (int i = 0; i < groups.length(); i++) {
-                JSONObject group = groups.getJSONObject(i);
-                if (group.getString("name").equals(groupName)) {
-                    return group.getString("id");
-                }
-            }
-            return "{\"ErrorMessage\":\"No group with specified name found\"}";
-        } catch (JSONException e) {
-            e.printStackTrace();
-            return "{\"ErrorMessage\":\"Error parsing JSON response\"}";
+            StringEntity requestEntity = new StringEntity(jsonBody, StandardCharsets.UTF_8);
+            request.setEntity(requestEntity);
+
+            HttpResponse response = httpClient.execute(request);
+            responseString = EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            String jsonCustomErrorString = "{\"ErrorMessage\": \"" + e.toString() + "\"}";
+            return jsonCustomErrorString;
         }
+        return responseString;
     }
+
+
+    public PlateDetails fetchPlateDetails(String carId) {
+        PlateDetails plateDetails = null;
+        try (CloseableHttpClient httpClient = HttpClientBuilder.create().build()) {
+            URIBuilder uri_builder = new URIBuilder(apiUrl + "/cars/" + carId);
+            HttpGet request = new HttpGet(uri_builder.build());
+            request.setHeader("Authorization", getEncodedAuthHeader());
+
+            HttpResponse response = httpClient.execute(request);
+            String responseString = EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
+
+            plateDetails = new Gson().fromJson(responseString, PlateDetails.class);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+        return plateDetails;
+    }
+
+    public List<PersonPlates> createAllPersonPlatesList() {
+        List<PlateQueryData> allPlates = this.getAllCars();
+        Map<String, List<PlateQueryData>> groupedPlates = this.groupPlatesByOwner(allPlates);
+
+        List<PersonPlates> personPlatesList = new ArrayList<>();
+
+        groupedPlates.forEach((ownerId, plates) -> {
+            if (!plates.isEmpty()) {
+                PlateDetails firstPlateDetails = this.fetchPlateDetails(plates.get(0).getId());
+                List<PersonPlates.PlateDetails> plateDetailsList = new ArrayList<>();
+                for (PlateQueryData plate : plates) {
+                    PersonPlates.PlateDetails pd = new PersonPlates.PlateDetails();
+                    pd.setLicense_plate_number(plate.getLicense_plate_number());
+                    pd.setId(plate.getId());
+                    plateDetailsList.add(pd);
+                }
+
+                PersonPlates personPlate = new PersonPlates();
+                personPlate.setFirst_name(firstPlateDetails.getOwner().firstName);
+                personPlate.setSecond_name(firstPlateDetails.getOwner().secondName);
+                personPlate.setThird_name(firstPlateDetails.getOwner().thirdName);
+                //personPlate.setGroup(firstPlateDetails.getGroups()); //TODO prerobiť na list
+                personPlate.setExternal_owner_id(ownerId);
+                personPlate.setModel(firstPlateDetails.getModel());
+                personPlate.setColor(firstPlateDetails.getColor());
+                personPlate.setAdditional_info(firstPlateDetails.getAdditional_info());
+                personPlate.setExternal_id(firstPlateDetails.getExternal_id());
+                personPlate.setExternal_sys_id(firstPlateDetails.getExternal_sys_id());
+                personPlate.setPlates(plateDetailsList);
+
+                personPlatesList.add(personPlate);
+            }
+        });
+
+        return personPlatesList;
+    }
+
+    public PersonPlates convertQueryPersonPlate(List<PlateQueryData> plates) {
+
+        PlateDetails firstPlateDetails = this.fetchPlateDetails(plates.get(0).getId());
+        List<PersonPlates.PlateDetails> plateDetailsList = new ArrayList<>();
+        for (PlateQueryData plate : plates) {
+            PersonPlates.PlateDetails pd = new PersonPlates.PlateDetails();
+            pd.setLicense_plate_number(plate.getLicense_plate_number());
+            pd.setId(plate.getId());
+            plateDetailsList.add(pd);
+        }
+
+        PersonPlates personPlate = new PersonPlates();
+        personPlate.setFirst_name(firstPlateDetails.getOwner().firstName);
+        personPlate.setSecond_name(firstPlateDetails.getOwner().secondName);
+        personPlate.setThird_name(firstPlateDetails.getOwner().thirdName);
+
+        List<PlateDetails.Group> plateDetailsGroups = firstPlateDetails.getGroups();
+        List<PersonPlates.Group> personPlatesGroups = new ArrayList<>();
+
+        for (PlateDetails.Group personGroup : plateDetailsGroups) {
+            PersonPlates.Group personPlatesGroup = new PersonPlates.Group();
+            personPlatesGroup.setId(personGroup.getId());
+            personPlatesGroups.add(personPlatesGroup);
+        }
+
+        personPlate.setGroups(personPlatesGroups);
+
+        personPlate.setExternal_owner_id(firstPlateDetails.getExternal_owner_id());
+        personPlate.setModel(firstPlateDetails.getModel());
+        personPlate.setColor(firstPlateDetails.getColor());
+        personPlate.setAdditional_info(firstPlateDetails.getAdditional_info());
+        personPlate.setExternal_id(firstPlateDetails.getExternal_id());
+        personPlate.setExternal_sys_id(firstPlateDetails.getExternal_sys_id());
+        personPlate.setPlates(plateDetailsList);
+
+        return personPlate;
+    }
+
+    public List<String> createPersonsAndPlates(PersonPlates personPlates) {
+        Gson gson = new Gson();
+        List<String> outputJsons = new ArrayList<>();
+
+        for (PersonPlates.PlateDetails personPlateDetail : personPlates.getPlates()) {
+            PlateDetails eocortexPlateDetails = new PlateDetails();
+
+            eocortexPlateDetails.getOwner().setFirstName(personPlates.getFirst_name());
+            eocortexPlateDetails.getOwner().setSecondName(personPlates.getSecond_name());
+            eocortexPlateDetails.getOwner().setThirdName(personPlates.getThird_name());
+
+            List<PersonPlates.Group> personGroups = personPlates.getGroups();
+            List<PlateDetails.Group> eocortexGroups = new ArrayList<>();
+
+            for (PersonPlates.Group personGroup : personGroups) {
+                PlateDetails.Group eocortexGroup = new PlateDetails.Group();
+                eocortexGroup.setId(personGroup.getId());
+                eocortexGroups.add(eocortexGroup);
+            }
+
+            eocortexPlateDetails.setGroups(eocortexGroups);
+
+            eocortexPlateDetails.setModel(personPlates.getModel());
+            eocortexPlateDetails.setColor(personPlates.getColor());
+            eocortexPlateDetails.setAdditional_info(personPlates.getAdditional_info());
+            eocortexPlateDetails.setExternal_id(personPlates.getExternal_id());
+            eocortexPlateDetails.setExternal_sys_id(personPlates.getExternal_sys_id());
+            eocortexPlateDetails.setExternal_owner_id(personPlates.getExternal_owner_id());
+
+            //Specific numberplate + id is null for create operation
+            eocortexPlateDetails.setLicense_plate_number(personPlateDetail.getLicense_plate_number());
+
+            String json = gson.toJson(eocortexPlateDetails);
+            outputJsons.add(json);
+            System.out.println("createPersonsAndPlates : "+ json); //Debug
+        }
+        return outputJsons;
+    }
+
+    public Map<String, List<PlateQueryData>> groupPlatesByOwner(List<PlateQueryData> plates) {
+        return plates.stream()
+                .filter(plate -> plate.getExternal_owner_id() != null && !plate.getExternal_owner_id().isEmpty()) // Filter non-empty external_owner_id
+                .collect(Collectors.groupingBy(PlateQueryData::getExternal_owner_id));
+    }
+
+
+
+
+
+
+
 }
+
