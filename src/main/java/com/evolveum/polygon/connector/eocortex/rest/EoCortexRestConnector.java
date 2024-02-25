@@ -124,56 +124,96 @@ public class EoCortexRestConnector
     public Uid create(ObjectClass objClass, Set<Attribute> attributes, OperationOptions options) {
         LOGGER.info("eocortex : Create operation invoked");
 
+        PersonPlates personPlates = new PersonPlates();
+        List<PersonPlates.PlateDetails> plateDetailsList = new ArrayList<>();
+        List<PersonPlates.Group> groupList = new ArrayList<>();
+
         // Extracting attributes
         String name = getAndValidateAttribute(attributes, Name.NAME);
+
         String firstName = getAndValidateAttribute(attributes, "first_name");
         String secondName = getAndValidateAttribute(attributes, "second_name");
         String thirdName = getAndValidateAttribute(attributes, "third_name");
+
         String externalId = getAndValidateAttribute(attributes, "external_id");
         String externalSysId = getAndValidateAttribute(attributes, "external_sys_id");
         String externalOwnerId = getAndValidateAttribute(attributes, "external_owner_id");
-        String licensePlateNumber = getAndValidateAttribute(attributes, "license_plate_number");
         String additionalInfo = getAndValidateAttribute(attributes, "additional_info");
+
         String model = getAndValidateAttribute(attributes, "model");
         String color = getAndValidateAttribute(attributes, "color");
-        String groupIds = getAndValidateAttribute(attributes, "groups_id");
 
-        List<String> groupList = null; // Initialize groupList as null
-
-        if (groupIds != null && !groupIds.isEmpty()) {
-            groupList = new ArrayList<>();
-            groupList.add(groupIds);
+        for (Attribute attr : attributes) {
+            switch (attr.getName()) {
+                case "license_plate_number":
+                    List<Object> licensePlateNumbers = attr.getValue();
+                    if (licensePlateNumbers != null) {
+                        licensePlateNumbers.forEach(number -> {
+                            PersonPlates.PlateDetails detail = new PersonPlates.PlateDetails();
+                            detail.setLicense_plate_number(number.toString());
+                            plateDetailsList.add(detail);
+                        });
+                    }
+                    break;
+                case "groups_id":
+                    List<Object> groupsIds = attr.getValue();
+                    if (groupsIds != null) {
+                        groupsIds.forEach(id -> {
+                            PersonPlates.Group group = new PersonPlates.Group();
+                            group.setId(id.toString());
+                            groupList.add(group);
+                        });
+                    }
+                    break;
+            }
         }
 
-        //String addCarJson = api.createJsonString(firstName, secondName, thirdName, externalId, externalSysId, externalOwnerId, licensePlateNumber, additionalInfo, model, color, groupList);
+        //setting appropriate personPlates
+        personPlates.setFirst_name(firstName);
+        personPlates.setSecond_name(secondName);
+        personPlates.setThird_name(thirdName);
 
-        //LOGGER.info("eocortex : Create op info ->"+ externalSysId + "," + name + " ");
+        personPlates.setExternal_id(externalId);
+        personPlates.setExternal_sys_id(externalSysId);
+        personPlates.setExternal_owner_id(externalOwnerId);
+        personPlates.setAdditional_info(additionalInfo);
 
-        //String addCarResult = api.addCar(addCarJson);
+        personPlates.setModel(model);
+        personPlates.setColor(color);
 
-        //String uidNewCar = null;
-        //if(!api.hasError(addCarResult)) uidNewCar = api.parseUidFromResponse(addCarResult);
+        personPlates.setPlates(plateDetailsList);
+        personPlates.setGroups(groupList);
 
-        //LOGGER.info("EoCortex : Create car id ->" + uidNewCar);
+        //generate PlateDetails for addCar
+        List<String> uniqueCarJson = api.createPersonsAndPlates(personPlates);
 
+        for(String json_car : uniqueCarJson){
+            String result = api.addCar(json_car);
+            LOGGER.info("EoCortex : Create car operation invoked result error -> " + api.hasError(result));
+        }
 
-        LOGGER.info("disabled for developement");
-        return new Uid(name);
+        //return by unique ownerId
+        //TODO extreme edge case to check if not in set
+        return new Uid(externalOwnerId);
     }
 
     @Override
     public void delete(ObjectClass objClass, Uid uid, OperationOptions options) {
         LOGGER.info("eocortex : Delete operation invoked");
 
-        //String carFindUid = api.parseUidFromResponse(api.findCars(uid.getUidValue(),null));
-        //TODO TURNED OFF
-        String deleteResult = "{\"ErrorMessage\":\"TURNED OFF - funkcia zakomentovana\"}";
-        //api.deleteCar(uid.getUidValue());
+        //Get all plates query by uid
+        List<PlateQueryData> plates_query = api.listByOwner(uid.getUidValue());
 
-        if(api.hasError(deleteResult)) {
-            LOGGER.error("EoCortex : delete error :"); //+ api.parseErrorMessage(deleteResult)
-        } else {
-            LOGGER.info("eocortex : delete ->"+ uid.getUidValue());
+        //Iterate over and remove each plate belonging to the exact
+        for(PlateQueryData plate_del : plates_query){
+            String deleteResult = api.deleteCar(plate_del.getId()); //TODO turned off
+
+            if(api.hasError(deleteResult)) {
+                LOGGER.error("EoCortex : delete error :");
+            } else {
+                LOGGER.info("eocortex : delete ->"+ uid.getUidValue());
+            }
+
         }
     }
 
@@ -182,19 +222,17 @@ public class EoCortexRestConnector
         LOGGER.info("Execute query operation invoked");
         List<PersonPlates> personPlatesList = new ArrayList<>();
 
-        //TODO learn how to filters work
         if (!objClass.is(ObjectClass.ACCOUNT_NAME)) {
             throw new IllegalArgumentException("Unsupported object class: " + objClass);
         }
 
         try {
             //TODO oštriť nenajdenu značku + thow special exception
-            if (query instanceof EqualsFilter) {
+            if (query instanceof EqualsFilter) { //One user Plate
                 EqualsFilter equalsFilter = (EqualsFilter) query;
                 String attributeName = equalsFilter.getAttribute().getName();
                 Object attributeValue = equalsFilter.getAttribute().getValue().get(0);
                 String plateId = (String) attributeValue;
-
 
                 if (Uid.NAME.equals(attributeName)) {
                     //LOGGER.info("Query EqualsFilter - "+attributeName + " " + attributeValue + " : " +plate.getId());
@@ -212,7 +250,7 @@ public class EoCortexRestConnector
                 }
 
             }
-            else { //all plates
+            else { //All plates
                 personPlatesList = api.createAllPersonPlatesList();
                 LOGGER.info("ALL Query got results : "+ personPlatesList.size());
             }
@@ -235,12 +273,11 @@ public class EoCortexRestConnector
                 addAttributeToBuilder(cob, "model", personplate.getModel());
                 addAttributeToBuilder(cob, "color", personplate.getColor());
 
+                //Plates
                 if(personplate.getPlates() != null) {
                     List<String> licensePlateNumbers = personplate.getPlates().stream()
                             .map(PersonPlates.PlateDetails::getLicense_plate_number)
                             .collect(Collectors.toList());
-                    //addAttributeToBuilder(cob, "license_plate_number", licensePlateNumbers);
-                    //cob.addAttribute("license_plate_number", licensePlateNumbers);
 
                     AttributeBuilder abPlates = new AttributeBuilder();
                     abPlates.setName("license_plate_number");
@@ -248,11 +285,11 @@ public class EoCortexRestConnector
                     cob.addAttribute(abPlates.build());
                 }
 
+                //Groups
                 if(personplate.getGroups() != null) {
                     List<String> groupIds = personplate.getGroups().stream()
                             .map(PersonPlates.Group::getId)
                             .collect(Collectors.toList());
-                    //addAttributeToBuilder(cob, "groups_id", groupIds);
 
                     AttributeBuilder abGroups = new AttributeBuilder();
                     abGroups.setName("groups_id");
@@ -278,6 +315,12 @@ public class EoCortexRestConnector
         if (!objClass.is(ObjectClass.ACCOUNT_NAME)) {
             throw new IllegalArgumentException("Unsupported object class: " + objClass);
         }
+
+        //_.intersection(One, Two) -> not changed data
+        //
+        //_.difference(Two, One) -> new data
+        //
+        //_.difference(One, Two) -> removed data
 
         /*
         Gson gson = new Gson();
