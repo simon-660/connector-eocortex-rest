@@ -29,6 +29,12 @@ import org.identityconnectors.framework.spi.operations.TestOp;
 import org.identityconnectors.framework.spi.operations.UpdateDeltaOp;
 import org.identityconnectors.framework.spi.operations.DeleteOp;
 
+//TODO issue when the user has no plates do nothing, (consult with mann about this)
+//Možno nastaviť ako mandatory aspoň jeden plate by pomohlo, lebo ak nie tak musim riešiť edgecase v create a edit do nula značiek
+
+//Nepovolenie editu no nuly ? na strane MP (reconciliation to uprace ?), breakne sa link v eo neostane ziadny detail
+//Ako poriešiť usera ktory zrazu značku ma lebo si ju pridal(čo s tým spraví mippoint, zavola sam create na konektore ?) - ANO
+
 @ConnectorClass(displayNameKey = "connector.gitlab.rest.display", configurationClass = EoCortexRestConfiguration.class)
 public class EoCortexRestConnector
 		implements TestOp, SchemaOp, Connector, CreateOp, DeleteOp, UpdateDeltaOp, SearchOp<Filter>  {
@@ -120,11 +126,7 @@ public class EoCortexRestConnector
         return builder.build();
     }
 
-    //TODO issue when the user has no plates do nothing, (consult with mann about this)
-    //Možno nastaviť ako mandatory aspoň jeden plate by pomohlo, lebo ak nie tak musim riešiť edgecase v create a edit do nula značiek
 
-    //Nepovolenie editu no nuly ? na strane MP (reconciliation to uprace ?), breakne sa link v eo neostane ziadny detail
-    //Ako poriešiť usera ktory zrazu značku ma lebo si ju pridal(čo s tým spraví mippoint, zavola sam create na konektore ?)
     @Override
     public Uid create(ObjectClass objClass, Set<Attribute> attributes, OperationOptions options) {
         LOGGER.info("eocortex : Create operation invoked");
