@@ -120,6 +120,11 @@ public class EoCortexRestConnector
         return builder.build();
     }
 
+    //TODO issue when the user has no plates do nothing, (consult with mann about this)
+    //Možno nastaviť ako mandatory aspoň jeden plate by pomohlo, lebo ak nie tak musim riešiť edgecase v create a edit do nula značiek
+
+    //Nepovolenie editu no nuly ? na strane MP (reconciliation to uprace ?), breakne sa link v eo neostane ziadny detail
+    //Ako poriešiť usera ktory zrazu značku ma lebo si ju pridal(čo s tým spraví mippoint, zavola sam create na konektore ?)
     @Override
     public Uid create(ObjectClass objClass, Set<Attribute> attributes, OperationOptions options) {
         LOGGER.info("eocortex : Create operation invoked");
@@ -204,9 +209,9 @@ public class EoCortexRestConnector
         //Get all plates query by uid
         List<PlateQueryData> plates_query = api.listByOwner(uid.getUidValue());
 
-        //Iterate over and remove each plate belonging to the exact
+        //Iterate over and remove each plate belonging to the exact id
         for(PlateQueryData plate_del : plates_query){
-            String deleteResult = api.deleteCar(plate_del.getId()); //TODO turned off
+            String deleteResult = api.deleteCar(plate_del.getId());
 
             if(api.hasError(deleteResult)) {
                 LOGGER.error("EoCortex : delete error :");
@@ -308,19 +313,179 @@ public class EoCortexRestConnector
         }
     }
 
+    //remove when remove is bigger than add (only the difference in size)
+    //edit when same number in add and remove
+    //add when add is bigger than remove (only the diffenence in size)
     @Override
     public Set<AttributeDelta> updateDelta(ObjectClass objClass, Uid uid, Set<AttributeDelta> attrsDelta, OperationOptions options) {
+        //THIS DOES NOT UPDATE GROUPS
+
         LOGGER.info("Update Delta operation invoked for UID: " + uid.getUidValue());
 
         if (!objClass.is(ObjectClass.ACCOUNT_NAME)) {
             throw new IllegalArgumentException("Unsupported object class: " + objClass);
         }
 
+        //fetch plates state from eocortex
+        List<PlateQueryData> plates_query = api.listByOwner(uid.getUidValue());
+        PersonPlates eoPersonPlates = api.convertQueryPersonPlate(plates_query);
+
+        List<String> platesToAdd = new ArrayList<>();
+        List<String> platesToRemove = new ArrayList<>();
+        //plate add and remove fetch
+        for (AttributeDelta delta : attrsDelta){
+            if (delta.getName().equals("license_plate_number")) {
+                LOGGER.info("Processing license_plate_number removals");
+                //compare attrsDelta valuesToRemove and valuesToAdd apply logic for removal (find id in eoPersonPlates) for api.deleteCar(id)
+                if (delta.getValuesToRemove() != null) {
+                    platesToRemove.addAll(delta.getValuesToRemove().stream().map(Object::toString).collect(Collectors.toList()));
+                }
+                if (delta.getValuesToAdd() != null) {
+                    platesToAdd.addAll(delta.getValuesToAdd().stream().map(Object::toString).collect(Collectors.toList()));
+                }
+            }
+        }
+
+        // Identify true additions and removals by finding unique entries
+        List<String> uniqueToAdd = new ArrayList<>(platesToAdd);
+        uniqueToAdd.removeAll(platesToRemove); // True additions not matched for removal
+
+        List<String> uniqueToRemove = new ArrayList<>(platesToRemove);
+        uniqueToRemove.removeAll(platesToAdd); // True removals not matched for addition
+
+        // Process true removals
+        PersonPlates finalEoPersonPlates = eoPersonPlates;
+        uniqueToRemove.forEach(plateToRemove -> {
+            // Find and remove the plate from eoPersonPlates, then call API to delete
+            finalEoPersonPlates.getPlates().stream()
+                    .filter(plateData -> plateData.getLicense_plate_number().equals(plateToRemove))
+                    .findFirst()
+                    .ifPresent(plateData -> {
+
+                        String remove_result = api.deleteCar(plateData.getId());
+                        LOGGER.info("edit : removing plate -> "+ plateData.getId()+" error -> "+ api.hasError(remove_result));
+                        //finalEoPersonPlates.getPlates().remove(plateData); //TODO test
+                    });
+        });
+
+
+        //---------------add
+
+        PersonPlates newPlatesToAdd = eoPersonPlates;
+        List<PersonPlates.PlateDetails> plateDetailsListAdd = new ArrayList<>();
+
+        // Process true additions
+        for(String plate : uniqueToAdd) {
+            PersonPlates.PlateDetails pd = new PersonPlates.PlateDetails();
+            pd.setLicense_plate_number(plate);
+            plateDetailsListAdd.add(pd);
+
+            LOGGER.info("Adding new plate: " + plate);
+        }
+        newPlatesToAdd.setPlates(plateDetailsListAdd);
+
+        List<String> plateAddJson = api.createPersonsAndPlates(newPlatesToAdd); //TODO optimize call
+
+        for(String plate : plateAddJson){
+            String add_result = api.addCar(plate);
+            LOGGER.info("edit : adding plate -> "+" error -> "+ api.hasError(add_result));
+        }
+
+
+        //----------------edit
+
+        //fetch update
+        plates_query = api.listByOwner(uid.getUidValue());
+        eoPersonPlates = api.convertQueryPersonPlate(plates_query);
+
+        //flag for signaling change of parameter name from schema
+        Boolean editFlag = false;
+
+        for (AttributeDelta delta : attrsDelta) {
+            String attributeName = delta.getName();
+            List<Object> valuesToReplace = delta.getValuesToReplace();
+
+            if (valuesToReplace != null && !valuesToReplace.isEmpty()) {
+                Object newValue = valuesToReplace.get(0);
+
+                switch (attributeName) {
+                    case "first_name":
+                        eoPersonPlates.setFirst_name(newValue.toString());
+                        editFlag = true;
+                        break;
+                    case "second_name":
+                        eoPersonPlates.setSecond_name(newValue.toString());
+                        editFlag = true;
+                        break;
+                    case "third_name":
+                        eoPersonPlates.setThird_name(newValue.toString());
+                        editFlag = true;
+                        break;
+                    case "external_id":
+                        eoPersonPlates.setExternal_id(newValue.toString());
+                        editFlag = true;
+                        break;
+                    case "external_sys_id":
+                        eoPersonPlates.setExternal_sys_id(newValue.toString());
+                        editFlag = true;
+                        break;
+                    case "external_owner_id":
+                        eoPersonPlates.setExternal_owner_id(newValue.toString());
+                        editFlag = true;
+                        break;
+                    case "additional_info":
+                        eoPersonPlates.setAdditional_info(newValue.toString());
+                        editFlag = true;
+                        break;
+                    case "model":
+                        eoPersonPlates.setModel(newValue.toString());
+                        editFlag = true;
+                        break;
+                    case "color":
+                        eoPersonPlates.setColor(newValue.toString());
+                        editFlag = true;
+                        break;
+                    default:
+                        LOGGER.warn("Unknown attribute for update: " + attributeName);
+                }
+            }
+        }
+
+        //edit only if flag for edit is set
+        if(editFlag){
+            List<String> plateEditJson = api.createPersonsAndPlates(eoPersonPlates);
+            List<PersonPlates.PlateDetails> currentPlates = eoPersonPlates.getPlates();
+
+            if(plateEditJson.size() == currentPlates.size()) {
+
+                for (int i = 0; i <= plateEditJson.size()-1 ; i++) {
+                    //get id from eoPersonPlates as the createPersonsAndPlates is by design omiting ids
+                    //the order is the same when creating json
+
+                    String result_edit = api.updateCar(currentPlates.get(i).getId(),plateEditJson.get(i));
+                    System.out.println("edit : editing plate error ->"+ api.hasError(result_edit));
+                }
+            }
+        }
+
+
+
+
         //_.intersection(One, Two) -> not changed data
         //
         //_.difference(Two, One) -> new data
         //
         //_.difference(One, Two) -> removed data
+
+        //UPDATE ALL OTHERS + GROUPS (move)
+        //UPDATE ADD NEW
+        //UPDATE REMOVE OLD
+
+        //EXECUTE
+
+        //if same number
+        //identify additions
+        //identify deletions
 
         /*
         Gson gson = new Gson();
