@@ -1,5 +1,10 @@
+//TODO
+// - prekompilovať javou 17 (nova java)
+// - group id pridať -> nove znaky nech maju konfigurovatelny groups_id !! jedno staticky pri schema configu je problem
+// - poriešiť update a pridanie len na create operaciu
 
-// Simplified version of GitlabRestConnector.java
+// - Pridať feature na system_idečko do settingov - DONE
+// - additional-info -> aby šlo zo settings DONE
 
 package com.evolveum.polygon.connector.eocortex.rest;
 
@@ -55,11 +60,12 @@ public class EoCortexRestConnector
 
         this.configuration = (EoCortexRestConfiguration) cfg;
 
-        //TODO this.configuration.validate();
+        this.configuration.validate(); //TODO check
 
         String apiUrl = this.configuration.getConnectionUrl();
         String username = this.configuration.getUsername();
         String password = this.configuration.getPassword();
+
 
         this.api = new EocortexApi(apiUrl, username, password);
         LOGGER.info("eocortex : init -> "+ apiUrl +" "+ username +" "+ password);
@@ -147,6 +153,16 @@ public class EoCortexRestConnector
         String externalOwnerId = getAndValidateAttribute(attributes, "external_owner_id");
         String additionalInfo = getAndValidateAttribute(attributes, "additional_info");
 
+        //Creation of new identity with system id based on settings when empty
+        if(externalSysId == null){
+            externalSysId = this.configuration.getExternal_sys_id();
+        }
+
+        //Additional info if empty, use configured variable
+        if(additionalInfo == null){
+            additionalInfo = this.configuration.getAdditional_info();
+        }
+
         String model = getAndValidateAttribute(attributes, "model");
         String color = getAndValidateAttribute(attributes, "color");
 
@@ -172,6 +188,24 @@ public class EoCortexRestConnector
                         });
                     }
                     break;
+            }
+        }
+
+        //empty groups id add default from settings
+        if(!this.configuration.getDefault_group().isEmpty() || this.configuration.getDefault_group() != null) {
+            if (groupList.isEmpty()) {
+                PersonPlates.Group group = new PersonPlates.Group();
+                group.setId(this.configuration.getDefault_group());
+                groupList.add(group);
+            }
+            else{ //TODO hard to reach test
+                boolean groupExists = groupList.stream() //if do not exists in current group_id schema add it from settings
+                        .anyMatch(group -> group.getId().equals(this.configuration.getDefault_group()));
+                if (!groupExists) {
+                    PersonPlates.Group group = new PersonPlates.Group();
+                    group.setId(this.configuration.getDefault_group());
+                    groupList.add(group);
+                }
             }
         }
 
@@ -244,7 +278,7 @@ public class EoCortexRestConnector
                 if (Uid.NAME.equals(attributeName)) {
                     //LOGGER.info("Query EqualsFilter - "+attributeName + " " + attributeValue + " : " +plate.getId());
                     try {
-                        List<PlateQueryData> plates_query = api.listByOwner(plateId);
+                        List<PlateQueryData> plates_query = api.listByOwner(plateId); //TODO add by system_id, možno netreba
                         personPlatesList.add(api.convertQueryPersonPlate(plates_query));
                         LOGGER.info("EqualsFilter :"+ plateId);
                     }
@@ -258,7 +292,7 @@ public class EoCortexRestConnector
 
             }
             else { //All plates
-                personPlatesList = api.createAllPersonPlatesList();
+                personPlatesList = api.createAllPersonPlatesList(); //TODO add by system_id
                 LOGGER.info("ALL Query got results : "+ personPlatesList.size());
             }
 
@@ -403,10 +437,64 @@ public class EoCortexRestConnector
         //flag for signaling change of parameter name from schema
         Boolean editFlag = false;
 
+
         for (AttributeDelta delta : attrsDelta) {
             String attributeName = delta.getName();
             List<Object> valuesToReplace = delta.getValuesToReplace();
 
+            //process group_id
+            List<Object> valuesToAdd = delta.getValuesToAdd();
+            List<Object> valuesToRemove = delta.getValuesToRemove();
+
+            if (attributeName.equals("groups_id")){
+
+                //Check state of groupList already in MP
+                List<PersonPlates.Group> groupList;
+                if(eoPersonPlates.getGroups() != null){
+                   groupList = new ArrayList<>();
+                }
+                else groupList = eoPersonPlates.getGroups();
+
+                List<PersonPlates.Group> tempToRemove = new ArrayList<>();
+                List<PersonPlates.Group> tempToAdd = new ArrayList<>();
+
+                // Remove groups
+                if (valuesToRemove != null) {
+                    valuesToRemove.forEach(valueToRemove -> {
+                        String idToRemove = valueToRemove.toString();
+
+                        groupList.stream()
+                                .filter(group -> group.getId().equals(idToRemove))
+                                .findFirst()
+                                .ifPresent(tempToRemove::add);
+                    });
+                }
+                groupList.removeAll(tempToRemove);
+
+
+                // Add groups, check duplicates
+                if (valuesToAdd != null) {
+                    valuesToAdd.forEach(valueToAdd -> {
+
+                        //check
+                        String idToAdd = valueToAdd.toString();
+                        boolean exists = groupList.stream()
+                                .anyMatch(group -> group.getId().equals(idToAdd));
+
+                        if (!exists) {
+                            PersonPlates.Group newGroup = new PersonPlates.Group();
+                            newGroup.setId(idToAdd);
+                            tempToAdd.add(newGroup);
+                        }
+                    });
+                }
+                groupList.addAll(tempToAdd);
+
+                eoPersonPlates.setGroups(groupList);
+                editFlag = true;
+            }
+
+            //process other attributes
             if (valuesToReplace != null && !valuesToReplace.isEmpty()) {
                 Object newValue = valuesToReplace.get(0);
 

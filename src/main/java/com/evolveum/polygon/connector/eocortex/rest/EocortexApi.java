@@ -213,18 +213,28 @@ public class EocortexApi {
                     plateDetailsList.add(pd);
                 }
 
+                List<PersonPlates.Group> groupList = new ArrayList<>();
+                for (PlateQueryData plate : plates) {
+                    PersonPlates.Group gd = new PersonPlates.Group();
+                    gd.setId(plate.getId());
+                    groupList.add(gd);
+                }
+
                 PersonPlates personPlate = new PersonPlates();
                 personPlate.setFirst_name(firstPlateDetails.getOwner().firstName);
                 personPlate.setSecond_name(firstPlateDetails.getOwner().secondName);
                 personPlate.setThird_name(firstPlateDetails.getOwner().thirdName);
-                //personPlate.setGroup(firstPlateDetails.getGroups()); //TODO prerobiť na list
+
                 personPlate.setExternal_owner_id(ownerId);
-                personPlate.setModel(firstPlateDetails.getModel());
-                personPlate.setColor(firstPlateDetails.getColor());
                 personPlate.setAdditional_info(firstPlateDetails.getAdditional_info());
                 personPlate.setExternal_id(firstPlateDetails.getExternal_id());
                 personPlate.setExternal_sys_id(firstPlateDetails.getExternal_sys_id());
+
+                personPlate.setModel(firstPlateDetails.getModel());
+                personPlate.setColor(firstPlateDetails.getColor());
+
                 personPlate.setPlates(plateDetailsList);
+                personPlate.setGroups(groupList);
 
                 personPlatesList.add(personPlate);
             }
@@ -312,6 +322,7 @@ public class EocortexApi {
 
     public Map<String, List<PlateQueryData>> groupPlatesByOwner(List<PlateQueryData> plates) {
         return plates.stream()
+                //.filter(plate -> plate.getExternal_sys_id() != null && plate.getExternal_sys_id().equals(specifiedSysId)) // Filter by specified external_sys_id
                 .filter(plate -> plate.getExternal_owner_id() != null && !plate.getExternal_owner_id().isEmpty()) // Filter non-empty external_owner_id
                 .collect(Collectors.groupingBy(PlateQueryData::getExternal_owner_id));
     }
