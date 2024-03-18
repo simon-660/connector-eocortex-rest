@@ -196,15 +196,16 @@ public class EocortexApi {
         return plateDetails;
     }
 
-    public List<PersonPlates> createAllPersonPlatesList() {
+    public List<PersonPlates> createAllPersonPlatesList(String sys_id) {
         List<PlateQueryData> allPlates = this.getAllCars();
-        Map<String, List<PlateQueryData>> groupedPlates = this.groupPlatesByOwner(allPlates);
+        Map<String, List<PlateQueryData>> groupedPlates = this.groupPlatesByOwner(allPlates, sys_id);
 
         List<PersonPlates> personPlatesList = new ArrayList<>();
 
         groupedPlates.forEach((ownerId, plates) -> {
             if (!plates.isEmpty()) {
                 PlateDetails firstPlateDetails = this.fetchPlateDetails(plates.get(0).getId());
+
                 List<PersonPlates.PlateDetails> plateDetailsList = new ArrayList<>();
                 for (PlateQueryData plate : plates) {
                     PersonPlates.PlateDetails pd = new PersonPlates.PlateDetails();
@@ -320,17 +321,13 @@ public class EocortexApi {
         return outputJsons;
     }
 
-    public Map<String, List<PlateQueryData>> groupPlatesByOwner(List<PlateQueryData> plates) {
+    public Map<String, List<PlateQueryData>> groupPlatesByOwner(List<PlateQueryData> plates, String specifiedSysId) {
         return plates.stream()
-                //.filter(plate -> plate.getExternal_sys_id() != null && plate.getExternal_sys_id().equals(specifiedSysId)) // Filter by specified external_sys_id
+                .filter(plate -> (specifiedSysId == null || specifiedSysId.isEmpty()) ||
+                        (plate.getExternal_sys_id() != null && plate.getExternal_sys_id().equals(specifiedSysId))) // Filter by specified external_sys_id, if null or empty bypass .filter
                 .filter(plate -> plate.getExternal_owner_id() != null && !plate.getExternal_owner_id().isEmpty()) // Filter non-empty external_owner_id
                 .collect(Collectors.groupingBy(PlateQueryData::getExternal_owner_id));
     }
-
-
-
-
-
 
 
 }

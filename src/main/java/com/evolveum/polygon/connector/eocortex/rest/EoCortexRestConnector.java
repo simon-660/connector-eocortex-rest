@@ -94,7 +94,7 @@ public class EoCortexRestConnector
         AttributeInfoBuilder uidAib = new AttributeInfoBuilder(Uid.NAME);
         uidAib.setNativeName("entryUUID");
         uidAib.setType(String.class);
-        uidAib.setRequired(false); // Must be optional. It is not present for create operations
+        uidAib.setRequired(false); // Must be optional. It is not present for create operations (before it)
         uidAib.setCreateable(false);
         uidAib.setUpdateable(false);
         uidAib.setReadable(true);
@@ -292,7 +292,7 @@ public class EoCortexRestConnector
 
             }
             else { //All plates
-                personPlatesList = api.createAllPersonPlatesList(); //TODO add by system_id
+                personPlatesList = api.createAllPersonPlatesList(this.configuration.getExternal_sys_id()); //TODO add by system_id
                 LOGGER.info("ALL Query got results : "+ personPlatesList.size());
             }
 
@@ -557,8 +557,6 @@ public class EoCortexRestConnector
                 }
             }
         }
-
-
 
 
         //_.intersection(One, Two) -> not changed data

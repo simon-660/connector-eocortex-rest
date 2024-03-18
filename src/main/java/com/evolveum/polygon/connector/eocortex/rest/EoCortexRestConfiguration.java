@@ -22,7 +22,7 @@ public class EoCortexRestConfiguration extends AbstractConfiguration {
     private static final Log LOGGER = Log.getLog(EoCortexRestConnector.class);
 
     //TODO add a required to all of those
-    @ConfigurationProperty(displayMessageKey = "connectionUrl.display", helpMessageKey = "connectionUrl.help")
+    @ConfigurationProperty(displayMessageKey = "connectionUrl.display", helpMessageKey = "connectionUrl.help", required = true)
     public String getConnectionUrl() {
         return connectionUrl;
     }
@@ -31,7 +31,7 @@ public class EoCortexRestConfiguration extends AbstractConfiguration {
         this.connectionUrl = connectionUrl;
     }
 
-    @ConfigurationProperty(displayMessageKey = "username.display", helpMessageKey = "username.help")
+    @ConfigurationProperty(displayMessageKey = "username.display", helpMessageKey = "username.help", required = true)
     public String getUsername() {
         return username;
     }
@@ -40,7 +40,7 @@ public class EoCortexRestConfiguration extends AbstractConfiguration {
         this.username = username;
     }
 
-    @ConfigurationProperty(displayMessageKey = "password.display", helpMessageKey = "password.help", confidential = true)
+    @ConfigurationProperty(displayMessageKey = "password.display", helpMessageKey = "password.help", confidential = true, required = true)
     public String getPassword() {
         return password;
     }
@@ -49,14 +49,17 @@ public class EoCortexRestConfiguration extends AbstractConfiguration {
         this.password = password;
     }
 
+    @ConfigurationProperty(displayMessageKey = "externalSysId.display", helpMessageKey = "externalSysId.help")
     public String getExternal_sys_id() {return external_sys_id;}
 
     public void setExternal_sys_id(String external_sys_id) {this.external_sys_id = external_sys_id;}
 
+    @ConfigurationProperty(displayMessageKey = "additionalInfo.display", helpMessageKey = "additionalInfo.help")
     public String getAdditional_info() {return additional_info;}
 
     public void setAdditional_info(String additional_info) {this.additional_info = additional_info;}
 
+    @ConfigurationProperty(displayMessageKey = "defaultGroup.display", helpMessageKey = "defaultGroup.help")
     public String getDefault_group() {return default_group;}
 
     public void setDefault_group(String default_group) {this.default_group = default_group;}
@@ -72,10 +75,8 @@ public class EoCortexRestConfiguration extends AbstractConfiguration {
         if (password == null || password.isEmpty()) {
             throw new IllegalArgumentException("Password is required.");
         }
-        //external_sys_id is required for delivering specific groups of plates
-        if (external_sys_id == null || external_sys_id.isEmpty()) {
-            throw new IllegalArgumentException("external_sys_id is required.");
-        }
+
+        //external_sys_id is not required as null or empty will turn off filter
         //Additional info can be empty;
         //Additional group can be empty;
     }
