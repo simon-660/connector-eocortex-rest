@@ -41,6 +41,7 @@ public class EocortexApi {
         String auth = username + ":" + password;
         return "Basic " + Base64.getEncoder().encodeToString(auth.getBytes(StandardCharsets.UTF_8));
     }
+
     public boolean hasError(String jsonResponse) {
         try {
             JSONObject responseObj = new JSONObject(jsonResponse);
@@ -50,6 +51,19 @@ public class EocortexApi {
             return false;
         }
     }
+
+    public String extractErrorMessage(String jsonResponse) {
+        try {
+            JSONObject responseObj = new JSONObject(jsonResponse);
+            if (responseObj.has("ErrorMessage") && !responseObj.getString("ErrorMessage").isEmpty()) {
+                return responseObj.getString("ErrorMessage");
+            }
+        } catch (JSONException e) {
+            return "The result error message was not present in the response";
+        }
+        return "";
+    }
+
     public boolean isSearchResultEmpty(String jsonResponse) {
         try {
             JSONObject responseObj = new JSONObject(jsonResponse);
@@ -59,6 +73,7 @@ public class EocortexApi {
             return true; //return false this is error handling
         }
     }
+
     public boolean testConnection() {
         try (CloseableHttpClient httpClient = HttpClientBuilder.create().build()) {
             HttpGet request = new HttpGet(apiUrl + "/cars"); //This api works with cars module so this checks this part of api if avail.
@@ -97,12 +112,16 @@ public class EocortexApi {
         }
     }
 
-    public List<PlateQueryData> listByOwner(String externalOwnerId) {
+    public List<PlateQueryData> listByOwner(String externalOwnerId, String externalSysId) {
         List<PlateQueryData> platesList = new ArrayList<>();
         try (CloseableHttpClient httpClient = HttpClientBuilder.create().build()) {
             URIBuilder builder = new URIBuilder(apiUrl + "/cars");
 
-            if (externalOwnerId != null && !externalOwnerId.isEmpty()) {
+            if (externalOwnerId != null && !externalOwnerId.isEmpty() && externalSysId != null && !externalSysId.isEmpty()) {
+                String combinedFilter = "external_owner_id='" + externalOwnerId + "' AND external_sys_id='" + externalSysId + "'";
+                builder.addParameter("filter", combinedFilter);
+            }
+            else if (externalOwnerId != null && !externalOwnerId.isEmpty()) {
                 builder.addParameter("filter", "external_owner_id='" + externalOwnerId + "'");
             }
 
@@ -246,6 +265,7 @@ public class EocortexApi {
 
     public PersonPlates convertQueryPersonPlate(List<PlateQueryData> plates) {
 
+        //TODO edit nad žiadnou žnačkou
         PlateDetails firstPlateDetails = this.fetchPlateDetails(plates.get(0).getId());
         List<PersonPlates.PlateDetails> plateDetailsList = new ArrayList<>();
         for (PlateQueryData plate : plates) {

@@ -1,14 +1,9 @@
 
 package com.evolveum.polygon.connector.eocortex.rest;
 
-
-import org.identityconnectors.common.StringUtil;
 import org.identityconnectors.common.logging.Log;
-import org.identityconnectors.common.security.GuardedString;
-import org.identityconnectors.framework.common.exceptions.ConfigurationException;
 import org.identityconnectors.framework.spi.AbstractConfiguration;
 import org.identityconnectors.framework.spi.ConfigurationProperty;
-import org.identityconnectors.framework.spi.StatefulConfiguration;
 
 public class EoCortexRestConfiguration extends AbstractConfiguration {
 
@@ -21,7 +16,6 @@ public class EoCortexRestConfiguration extends AbstractConfiguration {
 
     private static final Log LOGGER = Log.getLog(EoCortexRestConnector.class);
 
-    //TODO add a required to all of those
     @ConfigurationProperty(displayMessageKey = "connectionUrl.display", helpMessageKey = "connectionUrl.help", required = true)
     public String getConnectionUrl() {
         return connectionUrl;

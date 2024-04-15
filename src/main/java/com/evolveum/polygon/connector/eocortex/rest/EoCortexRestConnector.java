@@ -1,25 +1,12 @@
-//TODO
-// - prekompilovať javou 17 (nova java)
-// - group id pridať -> nove znaky nech maju konfigurovatelny groups_id !! jedno staticky pri schema configu je problem
-// - poriešiť update a pridanie len na create operaciu
-
-// - Pridať feature na system_idečko do settingov - DONE
-// - additional-info -> aby šlo zo settings DONE
-
 package com.evolveum.polygon.connector.eocortex.rest;
-
 
 import java.util.*;
 import java.util.stream.Collectors;
 
-import com.google.gson.Gson;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.identityconnectors.common.CollectionUtil;
 import org.identityconnectors.common.logging.Log;
-import org.identityconnectors.framework.common.exceptions.ConnectorException;
+import org.identityconnectors.framework.common.exceptions.AlreadyExistsException;
 import org.identityconnectors.framework.common.objects.*;
 import org.identityconnectors.framework.common.objects.filter.EqualsFilter;
 import org.identityconnectors.framework.common.objects.filter.Filter;
@@ -34,12 +21,6 @@ import org.identityconnectors.framework.spi.operations.TestOp;
 import org.identityconnectors.framework.spi.operations.UpdateDeltaOp;
 import org.identityconnectors.framework.spi.operations.DeleteOp;
 
-//TODO issue when the user has no plates do nothing, (consult with mann about this)
-//Možno nastaviť ako mandatory aspoň jeden plate by pomohlo, lebo ak nie tak musim riešiť edgecase v create a edit do nula značiek
-
-//Nepovolenie editu no nuly ? na strane MP (reconciliation to uprace ?), breakne sa link v eo neostane ziadny detail
-//Ako poriešiť usera ktory zrazu značku ma lebo si ju pridal(čo s tým spraví mippoint, zavola sam create na konektore ?) - ANO
-
 @ConnectorClass(displayNameKey = "connector.gitlab.rest.display", configurationClass = EoCortexRestConfiguration.class)
 public class EoCortexRestConnector
 		implements TestOp, SchemaOp, Connector, CreateOp, DeleteOp, UpdateDeltaOp, SearchOp<Filter>  {
@@ -49,11 +30,14 @@ public class EoCortexRestConnector
     private CloseableHttpClient httpClient;
     private EocortexApi api;
 
+    //Rudamentary for getting the configuration from another class
     @Override
 	public Configuration getConfiguration() {
 		return configuration;
 	}
 
+    //Initialisation occures when the connector starts interacting with connector, when doint in bursts it initialises once,
+    //but ehen the dispose is called there will be another initialisation for another workload
     @Override
     public void init(Configuration cfg) {
         LOGGER.info("eocortex : init operation invoked");
@@ -68,14 +52,20 @@ public class EoCortexRestConnector
 
 
         this.api = new EocortexApi(apiUrl, username, password);
-        LOGGER.info("eocortex : init -> "+ apiUrl +" "+ username +" "+ password);
+        //LOGGER.info("eocortex : init -> "+ apiUrl +" "+ username +" "+ password);
+        LOGGER.info("eocortex : init -> "+ apiUrl +" "+ username); //less verbose version for secret free log !
     }
 
+    //This method is here for the connectors that need to have special type of connection to the external system,
+    //In this case this does not apply for Rest Api call to MidPoint as they are created and closed per request
     @Override
     public void dispose() {
+        //All the tasks with connector has been done
         LOGGER.info("Dispose");
     }
 
+    //This is invoked with the other stuff when test is invoked in MidPoint connector setting. Based on external API type this calls
+    //the api to get the simple response and loggs the result.
     @Override
     public void test() {
         LOGGER.info("eocortex : Test operation invoked");
@@ -83,6 +73,8 @@ public class EoCortexRestConnector
         LOGGER.info("eocortex : Test opeation result -> "+ this.api.testConnection());
     }
 
+    //This method is the definition of schema (of the external system EoCortex) and is being presented to the midPoint
+    //First two elements are internal identicators for the cross system identification MidPoint -> EoCortex
     @Override
     public Schema schema() {
         SchemaBuilder builder = new SchemaBuilder(EoCortexRestConnector.class);
@@ -133,6 +125,8 @@ public class EoCortexRestConnector
     }
 
 
+    //The most important method used when identity provides link with external system and there are no numberplates for unique UID,
+    //system know the state and calls this instead of updateDelta based on information fetched from calling of executeQuery.
     @Override
     public Uid create(ObjectClass objClass, Set<Attribute> attributes, OperationOptions options) {
         LOGGER.info("eocortex : Create operation invoked");
@@ -229,21 +223,30 @@ public class EoCortexRestConnector
         List<String> uniqueCarJson = api.createPersonsAndPlates(personPlates);
 
         for(String json_car : uniqueCarJson){
+
             String result = api.addCar(json_car);
-            LOGGER.info("EoCortex : Create car operation invoked result error -> " + api.hasError(result));
+
+            if (api.hasError(result)) {
+                String errorMessage = api.extractErrorMessage(result);
+                LOGGER.error("EoCortex : Create car operation result error -> " + errorMessage);
+                throw new AlreadyExistsException("EoCortex : Create car operation error -> " + errorMessage);
+            } else {
+                LOGGER.info("EoCortex : Create car numberplate operation successfull");
+            }
+
         }
 
-        //return by unique ownerId
-        //TODO extreme edge case to check if not in set
         return new Uid(externalOwnerId);
     }
 
+    //This method makes sure that when conditions are met and MidPoint call this, all the necessary numberplate records,
+    //are removed from external EoCortex API to reach consistent state between both systems.
     @Override
     public void delete(ObjectClass objClass, Uid uid, OperationOptions options) {
         LOGGER.info("eocortex : Delete operation invoked");
 
         //Get all plates query by uid
-        List<PlateQueryData> plates_query = api.listByOwner(uid.getUidValue());
+        List<PlateQueryData> plates_query = api.listByOwner(uid.getUidValue(), this.configuration.getExternal_sys_id());
 
         //Iterate over and remove each plate belonging to the exact id
         for(PlateQueryData plate_del : plates_query){
@@ -258,6 +261,10 @@ public class EoCortexRestConnector
         }
     }
 
+    //This method is envoked when MidPoint wants update on the state of external system repository elements (numberplates elements)
+    //Main distinguishing element is query parameter. This method has two modes of operation, fetching one specific plate
+    //Based the content of query, method fetches the group of all numberplates for reference or finds the exact match with uid
+    // (1:N implementation, so fetches multiples and creates one element with schema structure for MidPoint
     @Override
     public void executeQuery(ObjectClass objClass, Filter query, ResultsHandler handler, OperationOptions options) {
         LOGGER.info("Execute query operation invoked");
@@ -278,7 +285,7 @@ public class EoCortexRestConnector
                 if (Uid.NAME.equals(attributeName)) {
                     //LOGGER.info("Query EqualsFilter - "+attributeName + " " + attributeValue + " : " +plate.getId());
                     try {
-                        List<PlateQueryData> plates_query = api.listByOwner(plateId); //TODO add by system_id, možno netreba
+                        List<PlateQueryData> plates_query = api.listByOwner(plateId, this.configuration.getExternal_sys_id()); //TODO add by system_id,
                         personPlatesList.add(api.convertQueryPersonPlate(plates_query));
                         LOGGER.info("EqualsFilter :"+ plateId);
                     }
@@ -349,13 +356,10 @@ public class EoCortexRestConnector
         }
     }
 
-    //remove when remove is bigger than add (only the difference in size)
-    //edit when same number in add and remove
-    //add when add is bigger than remove (only the diffenence in size)
+    //This is the complex method for updating the information for every numberplate in system. In case of this implementation the complexity comes
+    //with the need of special implementation of 1:N. The code is divided into three parts based on operation fetch, identify, remove, add, edit
     @Override
     public Set<AttributeDelta> updateDelta(ObjectClass objClass, Uid uid, Set<AttributeDelta> attrsDelta, OperationOptions options) {
-        //THIS DOES NOT UPDATE GROUPS
-
         LOGGER.info("Update Delta operation invoked for UID: " + uid.getUidValue());
 
         if (!objClass.is(ObjectClass.ACCOUNT_NAME)) {
@@ -363,11 +367,12 @@ public class EoCortexRestConnector
         }
 
         //fetch plates state from eocortex
-        List<PlateQueryData> plates_query = api.listByOwner(uid.getUidValue());
+        List<PlateQueryData> plates_query = api.listByOwner(uid.getUidValue(), this.configuration.getExternal_sys_id());
         PersonPlates eoPersonPlates = api.convertQueryPersonPlate(plates_query);
 
         List<String> platesToAdd = new ArrayList<>();
         List<String> platesToRemove = new ArrayList<>();
+
         //plate add and remove fetch
         for (AttributeDelta delta : attrsDelta){
             if (delta.getName().equals("license_plate_number")) {
@@ -389,7 +394,8 @@ public class EoCortexRestConnector
         List<String> uniqueToRemove = new ArrayList<>(platesToRemove);
         uniqueToRemove.removeAll(platesToAdd); // True removals not matched for addition
 
-        // Process true removals
+        //---------------REMOVALS Process true removals
+
         PersonPlates finalEoPersonPlates = eoPersonPlates;
         uniqueToRemove.forEach(plateToRemove -> {
             // Find and remove the plate from eoPersonPlates, then call API to delete
@@ -404,8 +410,7 @@ public class EoCortexRestConnector
                     });
         });
 
-
-        //---------------add
+        //---------------ADDITION
 
         PersonPlates newPlatesToAdd = eoPersonPlates;
         List<PersonPlates.PlateDetails> plateDetailsListAdd = new ArrayList<>();
@@ -418,20 +423,31 @@ public class EoCortexRestConnector
 
             LOGGER.info("Adding new plate: " + plate);
         }
+
         newPlatesToAdd.setPlates(plateDetailsListAdd);
 
         List<String> plateAddJson = api.createPersonsAndPlates(newPlatesToAdd); //TODO optimize call
 
         for(String plate : plateAddJson){
+
             String add_result = api.addCar(plate);
-            LOGGER.info("edit : adding plate -> "+" error -> "+ api.hasError(add_result));
+
+            if (api.hasError(add_result)) {
+                String errorMessage = api.extractErrorMessage(add_result); // Extract the error message once, if needed.
+                LOGGER.error("EoCortex - edit : adding plate error -> " + errorMessage); // Use error level logging for actual errors.
+                throw new AlreadyExistsException("EoCortex - edit : adding plate error -> " + errorMessage);
+            }
+            else {
+                LOGGER.info("EoCortex : Create car operation successfull");
+            }
+
         }
 
 
-        //----------------edit
+        //----------------EDIT
 
         //fetch update
-        plates_query = api.listByOwner(uid.getUidValue());
+        plates_query = api.listByOwner(uid.getUidValue(), this.configuration.getExternal_sys_id());
         eoPersonPlates = api.convertQueryPersonPlate(plates_query);
 
         //flag for signaling change of parameter name from schema
@@ -558,78 +574,19 @@ public class EoCortexRestConnector
             }
         }
 
-
+        //logic behind the given structure
+        //
         //_.intersection(One, Two) -> not changed data
         //
         //_.difference(Two, One) -> new data
         //
         //_.difference(One, Two) -> removed data
 
-        //UPDATE ALL OTHERS + GROUPS (move)
         //UPDATE ADD NEW
         //UPDATE REMOVE OLD
-
+        //UPDATE ALL OTHERS + GROUPS (move)
         //EXECUTE
 
-        //if same number
-        //identify additions
-        //identify deletions
-
-        /*
-        Gson gson = new Gson();
-        try {
-            String objectJson = api.getCarDetails(uid.getUidValue());
-            LOGGER.info("Delta uid load "+ api.hasError(objectJson));
-
-            JsonObject jsonCarObject = gson.fromJson(objectJson, JsonObject.class);
-
-            for (AttributeDelta delta : attrsDelta) {
-                String attributeName = delta.getName();
-                JsonElement newValue = null;
-
-                if (delta.getValuesToReplace() != null && !delta.getValuesToReplace().isEmpty()) {
-                    newValue = gson.toJsonTree(delta.getValuesToReplace().get(0));
-
-                    // Update top-level fields
-                    if (jsonCarObject.has(attributeName)) {
-                        LOGGER.info("Updating value top-level: "+ newValue);
-                        jsonCarObject.add(attributeName, newValue);
-                    }
-                    // Update nested fields within "owner"
-                    else if (jsonCarObject.has("owner") && jsonCarObject.getAsJsonObject("owner").has(attributeName)) {
-                        jsonCarObject.getAsJsonObject("owner").add(attributeName, newValue);
-                    }
-                    // Handling the 'groups' attribute for a single value
-                    // TODO prepare update for multiple values
-                    else if ("group_id".equals(attributeName)) {
-                        JsonArray groupsArray = jsonCarObject.getAsJsonArray("groups");
-                        if (groupsArray == null) {
-                            groupsArray = new JsonArray();
-                        }
-                        JsonObject groupObject = new JsonObject();
-                        groupObject.add("id", newValue);
-                        groupsArray.add(groupObject);
-                        jsonCarObject.add("groups", groupsArray);
-                    }
-
-                    LOGGER.info("Processed delta for attribute: " + attributeName);
-                }
-            }
-
-            String updatedJson = gson.toJson(jsonCarObject);
-            String updateResponse = api.updateCar(uid.getUidValue(), updatedJson);
-            if(api.hasError(updateResponse)) updateResponse = api.parseErrorMessage(updateResponse);
-            else updateResponse = "OK";
-
-            LOGGER.info("Size of updatedJson :" + updatedJson.length());
-
-            LOGGER.info("Processed delta update ->" + updateResponse);
-
-        } catch (Exception e) {
-            LOGGER.error("Error during update delta operation: " + e.getMessage(), e);
-            throw new ConnectorException("Error during update delta operation", e);
-        }
-         */
         return null;
     }
     
@@ -643,14 +600,15 @@ public class EoCortexRestConnector
 		};
 	}
 
+    //Simple method to validate what values are being passed and if the value is present for the next step to happen
     private String getAndValidateAttribute(Set<Attribute> attributes, String attributeName) {
         if(attributes.isEmpty()) return null;
 
         for (Attribute attr:attributes) {
+
             String attrName = attr.getName();
             String value = null;
-            //LOGGER.info("getAndValidateAttr : "+ attrName);
-            //LOGGER.info("--->"+attributeName+" ,"+attrName);
+
             if(attrName.equals(attributeName)) {
                 value = AttributeUtil.getStringValue(AttributeUtil.find(attributeName, attributes));
                 LOGGER.info("getAndValidateAttr : value ->" + value);
@@ -661,6 +619,7 @@ public class EoCortexRestConnector
         return null;
     }
 
+    //Method to help use the builder pattern for attibutes (cleanliness of code)
     private void addAttributeToBuilder(ConnectorObjectBuilder cob, String attributeName, Object attributeValue) {
         if (attributeValue != null) {
             cob.addAttribute(AttributeBuilder.build(attributeName, attributeValue));
