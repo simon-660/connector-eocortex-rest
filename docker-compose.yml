@@ -9,7 +9,7 @@ services:
     image: postgres:16-alpine
     environment:
      - POSTGRES_PASSWORD=dbheslo_tajne
-     - POSTGRES_USER=midpoint_main
+     - POSTGRES_USER=midpoint
      - POSTGRES_INITDB_ARGS=--lc-collate=en_US.utf8 --lc-ctype=en_US.utf8
     networks:
      - net
@@ -35,7 +35,7 @@ services:
     depends_on:
      - midpoint_data
     environment:
-     - MP_SET_midpoint_repository_jdbcUsername=midpoint_main
+     - MP_SET_midpoint_repository_jdbcUsername=midpoint
      - MP_SET_midpoint_repository_jdbcPassword=dbheslo_tajne
      - MP_SET_midpoint_repository_jdbcUrl=jdbc:postgresql://midpoint_data:5432/midpoint
      - MP_SET_midpoint_repository_database=postgresql
@@ -61,7 +61,7 @@ services:
       - 5005:5005 #debug port
     environment:
      - JAVA_OPTS=-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005 #debug being used for developement
-     - MP_SET_midpoint_repository_jdbcUsername=midpoint_main
+     - MP_SET_midpoint_repository_jdbcUsername=midpoint
      - MP_SET_midpoint_repository_jdbcPassword=dbheslo_tajne
      - MP_SET_midpoint_repository_jdbcUrl=jdbc:postgresql://midpoint_data:5432/midpoint
      - MP_SET_midpoint_repository_database=postgresql
