@@ -20,6 +20,8 @@ import org.identityconnectors.framework.spi.operations.SearchOp;
 import org.identityconnectors.framework.spi.operations.TestOp;
 import org.identityconnectors.framework.spi.operations.UpdateDeltaOp;
 import org.identityconnectors.framework.spi.operations.DeleteOp;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 @ConnectorClass(displayNameKey = "connector.gitlab.rest.display", configurationClass = EoCortexRestConfiguration.class)
 public class EoCortexRestConnector
@@ -129,7 +131,10 @@ public class EoCortexRestConnector
     //system know the state and calls this instead of updateDelta based on information fetched from calling of executeQuery.
     @Override
     public Uid create(ObjectClass objClass, Set<Attribute> attributes, OperationOptions options) {
-        LOGGER.info("eocortex : Create operation invoked");
+        //Random UUID for identification of logs from unique call
+        String processIdentifier = UUID.randomUUID().toString();
+
+        LOGGER.info("EoCortex : " + processIdentifier + " : Create operation invoked");
 
         PersonPlates personPlates = new PersonPlates();
         List<PersonPlates.PlateDetails> plateDetailsList = new ArrayList<>();
@@ -192,7 +197,7 @@ public class EoCortexRestConnector
                 group.setId(this.configuration.getDefault_group());
                 groupList.add(group);
             }
-            else{ //TODO hard to reach test
+            else{
                 boolean groupExists = groupList.stream() //if do not exists in current group_id schema add it from settings
                         .anyMatch(group -> group.getId().equals(this.configuration.getDefault_group()));
                 if (!groupExists) {
@@ -224,14 +229,26 @@ public class EoCortexRestConnector
 
         for(String json_car : uniqueCarJson){
 
-            String result = api.addCar(json_car);
+            String licensePlateNumber = null;
+            String uid_login = null;
 
-            if (api.hasError(result)) {
-                String errorMessage = api.extractErrorMessage(result);
-                LOGGER.error("EoCortex : Create car operation result error -> " + errorMessage);
-                throw new AlreadyExistsException("EoCortex : Create car operation error -> " + errorMessage);
-            } else {
-                LOGGER.info("EoCortex : Create car numberplate operation successfull");
+            try{
+                JSONObject carJson = new JSONObject(json_car);
+                licensePlateNumber = carJson.getString("license_plate_number");
+                uid_login = carJson.getString("external_owner_id");
+
+                String result = api.addCar(json_car);
+
+                if (api.hasError(result)) {
+                    String errorMessage = api.extractErrorMessage(result);
+                    LOGGER.error("EoCortex : " + processIdentifier + " : Create operation for license_plate : "+ licensePlateNumber +" : owner_id : "+ uid_login +" : operation error -> " + errorMessage);
+                    throw new AlreadyExistsException("EoCortex : Create car for license_plate : "+ licensePlateNumber +" : owner_id : "+ uid_login +" : operation error -> " + errorMessage);
+                } else {
+                    LOGGER.info("EoCortex : " + processIdentifier + " : Create car operation for license_plate : "+ licensePlateNumber +", successfull");
+                }
+
+            } catch (JSONException e) {
+                LOGGER.error("EoCortex : " + processIdentifier + " : Create car operation for license_plate : "+ licensePlateNumber +" : owner_id : "+ uid_login +" : operation error -> Cannot parse license_plate_number for logs");
             }
 
         }
@@ -243,7 +260,10 @@ public class EoCortexRestConnector
     //are removed from external EoCortex API to reach consistent state between both systems.
     @Override
     public void delete(ObjectClass objClass, Uid uid, OperationOptions options) {
-        LOGGER.info("eocortex : Delete operation invoked");
+        //Random UUID for identification of logs from unique call
+        String processIdentifier = UUID.randomUUID().toString();
+
+        LOGGER.info("EoCortex : " + processIdentifier + " : Delete operation invoked");
 
         //Get all plates query by uid
         List<PlateQueryData> plates_query = api.listByOwner(uid.getUidValue(), this.configuration.getExternal_sys_id());
@@ -253,9 +273,9 @@ public class EoCortexRestConnector
             String deleteResult = api.deleteCar(plate_del.getId());
 
             if(api.hasError(deleteResult)) {
-                LOGGER.error("EoCortex : delete error :");
+                LOGGER.error("EoCortex : " + processIdentifier + " : Remove operation for license_plate : "+ plate_del.getLicense_plate_number() +" : owner_id : "+ plate_del.getExternal_owner_id() +" : operation error");
             } else {
-                LOGGER.info("eocortex : delete ->"+ uid.getUidValue());
+                LOGGER.info("EoCortex : " + processIdentifier + " : Remove operation for license_plate : "+ plate_del.getLicense_plate_number() +" : owner_id : "+ plate_del.getExternal_owner_id() +" successfull");
             }
 
         }
@@ -360,7 +380,10 @@ public class EoCortexRestConnector
     //with the need of special implementation of 1:N. The code is divided into three parts based on operation fetch, identify, remove, add, edit
     @Override
     public Set<AttributeDelta> updateDelta(ObjectClass objClass, Uid uid, Set<AttributeDelta> attrsDelta, OperationOptions options) {
-        LOGGER.info("Update Delta operation invoked for UID: " + uid.getUidValue());
+        //Random UUID for identification of logs from unique call
+        String processIdentifier = UUID.randomUUID().toString();
+
+        LOGGER.info("EoCortex : " + processIdentifier + " : Update Delta operation invoked for UID: " + uid.getUidValue());
 
         if (!objClass.is(ObjectClass.ACCOUNT_NAME)) {
             throw new IllegalArgumentException("Unsupported object class: " + objClass);
@@ -405,7 +428,8 @@ public class EoCortexRestConnector
                     .ifPresent(plateData -> {
 
                         String remove_result = api.deleteCar(plateData.getId());
-                        LOGGER.info("edit : removing plate -> "+ plateData.getId()+" error -> "+ api.hasError(remove_result));
+                        LOGGER.info("EoCortex : " + processIdentifier + " : edit : removing license_plate : "+ plateData.getLicense_plate_number() + " : owner_id : "+ uid.getUidValue() +" : error state -> "+ api.hasError(remove_result));
+
                         //finalEoPersonPlates.getPlates().remove(plateData); //TODO test
                     });
         });
@@ -421,7 +445,7 @@ public class EoCortexRestConnector
             pd.setLicense_plate_number(plate);
             plateDetailsListAdd.add(pd);
 
-            LOGGER.info("Adding new plate: " + plate);
+            //LOGGER.info("EoCortex : " + processIdentifier + " : edit : Adding license_plate "+ plate);
         }
 
         newPlatesToAdd.setPlates(plateDetailsListAdd);
@@ -434,11 +458,11 @@ public class EoCortexRestConnector
 
             if (api.hasError(add_result)) {
                 String errorMessage = api.extractErrorMessage(add_result); // Extract the error message once, if needed.
-                LOGGER.error("EoCortex - edit : adding plate error -> " + errorMessage); // Use error level logging for actual errors.
+                LOGGER.error("EoCortex : " + processIdentifier + " : edit : Adding license_plate : "+ plate +" : owner_id : "+ uid.getUidValue() +" : operation error -> " + errorMessage); // Use error level logging for actual errors.
                 throw new AlreadyExistsException("EoCortex - edit : adding plate error -> " + errorMessage);
             }
             else {
-                LOGGER.info("EoCortex : Create car operation successfull");
+                LOGGER.info("EoCortex : " + processIdentifier + " : edit : Adding license_plate : "+ plate +" : owner_id : "+ uid.getUidValue() +" : successfull");
             }
 
         }
@@ -569,7 +593,11 @@ public class EoCortexRestConnector
                     //the order is the same when creating json
 
                     String result_edit = api.updateCar(currentPlates.get(i).getId(),plateEditJson.get(i));
-                    System.out.println("edit : editing plate error ->"+ api.hasError(result_edit));
+                    //System.out.println("edit : editing plate error ->"+ api.hasError(result_edit));
+                    if(api.hasError(result_edit)){
+                        LOGGER.error("EoCortex : " + processIdentifier + " : edit : editing parameters license_plate : "+ currentPlates.get(i).getLicense_plate_number() +" : owner_id : "+ uid.getUidValue() +" : operation error -> " + api.extractErrorMessage(result_edit)); // Use error level logging for actual errors.}
+                    }
+                    else LOGGER.info("EoCortex : " + processIdentifier + " : edit : editing parameters license_plate : "+ currentPlates.get(i).getLicense_plate_number() +" : owner_id : "+ uid.getUidValue() +" : successfull"); // Use error level logging for actual errors.
                 }
             }
         }

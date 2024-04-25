@@ -336,7 +336,7 @@ public class EocortexApi {
 
             String json = gson.toJson(eocortexPlateDetails);
             outputJsons.add(json);
-            System.out.println("createPersonsAndPlates : "+ json); //Debug
+            //System.out.println("createPersonsAndPlates : "+ json); //Debug
         }
         return outputJsons;
     }
