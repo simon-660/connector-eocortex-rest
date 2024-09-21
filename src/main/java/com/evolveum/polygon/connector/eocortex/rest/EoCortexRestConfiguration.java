@@ -13,6 +13,7 @@ public class EoCortexRestConfiguration extends AbstractConfiguration {
     private String external_sys_id;
     private String additional_info;
     private String default_group;
+    private int response_portion;
 
     private static final Log LOGGER = Log.getLog(EoCortexRestConnector.class);
 
@@ -57,6 +58,15 @@ public class EoCortexRestConfiguration extends AbstractConfiguration {
     public String getDefault_group() {return default_group;}
 
     public void setDefault_group(String default_group) {this.default_group = default_group;}
+
+    @ConfigurationProperty(displayMessageKey = "responsePortion.display", helpMessageKey = "responsePortion.help")
+    public int getResponse_portion() {
+        return response_portion;
+    }
+
+    public void setResponse_portion(int response_portion) {
+        this.response_portion = response_portion;
+    }
 
     @Override
     public void validate() {

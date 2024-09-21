@@ -18,7 +18,6 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.io.IOException;
 import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
@@ -30,11 +29,15 @@ public class EocortexApi {
     private String apiUrl;
     private String username;
     private String password;
+    private int response_portion = 1000;
 
-    public EocortexApi(String apiUrl, String username, String password) {
+    public EocortexApi(String apiUrl, String username, String password, int response_portion) {
         this.apiUrl = apiUrl;
         this.username = username;
         this.password = DigestUtils.md5Hex(password).toUpperCase(); //MD5 hash of password needed for eocortex
+        if (response_portion > 1000) {
+            this.response_portion = response_portion;
+        }
     }
 
     private String getEncodedAuthHeader() {
@@ -92,7 +95,11 @@ public class EocortexApi {
 
     public List<PlateQueryData> getAllCars() {
         try (CloseableHttpClient httpClient = HttpClientBuilder.create().build()) {
-            HttpGet request = new HttpGet(apiUrl + "/cars");
+
+            URIBuilder builder = new URIBuilder(apiUrl + "/cars");
+            builder.addParameter("portion", String.valueOf(response_portion));
+
+            HttpGet request = new HttpGet();
             request.setHeader("Authorization", getEncodedAuthHeader());
 
             HttpResponse response = httpClient.execute(request);
@@ -106,7 +113,7 @@ public class EocortexApi {
 
             // Deserialize JSON directly to List<Plate>
             return new Gson().fromJson(platesArray.toString(), new TypeToken<List<PlateQueryData>>(){}.getType());
-        } catch (IOException | JSONException e) {
+        } catch (Exception e) {
             e.printStackTrace();
             return Collections.emptyList(); // Return an empty list in case of error
         }
@@ -116,6 +123,7 @@ public class EocortexApi {
         List<PlateQueryData> platesList = new ArrayList<>();
         try (CloseableHttpClient httpClient = HttpClientBuilder.create().build()) {
             URIBuilder builder = new URIBuilder(apiUrl + "/cars");
+            builder.addParameter("portion", String.valueOf(response_portion));
 
             if (externalOwnerId != null && !externalOwnerId.isEmpty() && externalSysId != null && !externalSysId.isEmpty()) {
                 String combinedFilter = "external_owner_id='" + externalOwnerId + "' AND external_sys_id='" + externalSysId + "'";

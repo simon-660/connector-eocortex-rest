@@ -53,7 +53,7 @@ public class EoCortexRestConnector
         String password = this.configuration.getPassword();
 
 
-        this.api = new EocortexApi(apiUrl, username, password);
+        this.api = new EocortexApi(apiUrl, username, password, 20000);
         //LOGGER.info("eocortex : init -> "+ apiUrl +" "+ username +" "+ password);
         LOGGER.info("eocortex : init -> "+ apiUrl +" "+ username); //less verbose version for secret free log !
     }
